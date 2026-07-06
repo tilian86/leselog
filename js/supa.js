@@ -49,15 +49,27 @@ export async function fetchBooks() {
   return data || [];
 }
 
+// Spalten, die evtl. noch nicht in der DB existieren (Migration ausstehend) -> notfalls weglassen
+const OPTIONAL_COLS = ["web_rating", "web_rating_count"];
+const isMissingCol = (e) =>
+  e && (e.code === "PGRST204" || /column|schema cache|web_rating/i.test(e.message || ""));
+const stripOptional = (o) => { const c = { ...o }; OPTIONAL_COLS.forEach((k) => delete c[k]); return c; };
+
 export async function insertBook(book) {
-  const { data, error } = await supa.from("books").insert(book).select().single();
+  let { data, error } = await supa.from("books").insert(book).select().single();
+  if (error && isMissingCol(error)) {
+    ({ data, error } = await supa.from("books").insert(stripOptional(book)).select().single());
+  }
   if (error) throw error;
   return data;
 }
 
 // Viele Bücher auf einmal einfügen (Import). user_id füllt die DB per Default (auth.uid()).
 export async function insertBooks(books) {
-  const { data, error } = await supa.from("books").insert(books).select();
+  let { data, error } = await supa.from("books").insert(books).select();
+  if (error && isMissingCol(error)) {
+    ({ data, error } = await supa.from("books").insert(books.map(stripOptional)).select());
+  }
   if (error) throw error;
   return data || [];
 }

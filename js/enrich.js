@@ -34,7 +34,46 @@ function normalizeVolume(item) {
     description: v.description || null,
     categories: v.categories || null,
     google_books_id: item.id || null,
+    web_rating: v.averageRating != null ? v.averageRating : null,
+    web_rating_count: v.ratingsCount != null ? v.ratingsCount : null,
   };
+}
+
+// Links zu Buchhandlungen (Osiander direkt per ISBN, Thalia-Suche, Amazon)
+export function storeLinks(b) {
+  const isbn = b.isbn13 || b.isbn10 || "";
+  const term = encodeURIComponent([b.title, b.author].filter(Boolean).join(" ") || isbn);
+  const links = [];
+  links.push({ name: "Amazon", url: b.isbn10
+    ? "https://www.amazon.de/dp/" + b.isbn10
+    : "https://www.amazon.de/s?k=" + (isbn || term) + "&i=stripbooks" });
+  links.push({ name: "Thalia", url: "https://www.thalia.de/suche?sq=" + (isbn || term) });
+  if (isbn) links.push({ name: "Osiander", url: "https://www.osiander.de/details.cfm?isbn=" + isbn });
+  return links;
+}
+
+// Klappentext + Web-Bewertung für ein Buch nachladen (falls beim Treffer noch nicht dabei,
+// z. B. wenn er über OpenLibrary kam). Best effort – Fehler werden verschluckt.
+export async function fetchExtras(b) {
+  if (b.description && b.web_rating != null) return {};
+  try {
+    let vol = null;
+    if (b.google_books_id) {
+      const r = await fetch("https://www.googleapis.com/books/v1/volumes/" + b.google_books_id);
+      if (r.ok) vol = (await r.json()).volumeInfo;
+    }
+    if (!vol) {
+      const q = b.isbn13 ? "isbn:" + b.isbn13 : encodeURIComponent([b.title, b.author].filter(Boolean).join(" "));
+      const r = await fetch("https://www.googleapis.com/books/v1/volumes?q=" + q + "&maxResults=1");
+      if (r.ok) { const j = await r.json(); vol = j.items && j.items[0] && j.items[0].volumeInfo; }
+    }
+    if (!vol) return {};
+    return {
+      description: b.description || vol.description || null,
+      web_rating: b.web_rating != null ? b.web_rating : (vol.averageRating != null ? vol.averageRating : null),
+      web_rating_count: b.web_rating_count != null ? b.web_rating_count : (vol.ratingsCount != null ? vol.ratingsCount : null),
+    };
+  } catch (_) { return {}; }
 }
 
 // Rangfolge: vollständigere Treffer (mit Cover, Seiten, ISBN) nach oben

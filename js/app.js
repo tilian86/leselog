@@ -2,7 +2,7 @@
 import { CONFIG } from "./config.js";
 import { currentSession, onAuth, signInPassword, signUpPassword, signOut,
          fetchBooks, insertBook, insertBooks, updateBook, removeBook } from "./supa.js";
-import { searchBooks, searchByISBN, guessReadingDays, parseUtterance, amazonUrl } from "./enrich.js";
+import { searchBooks, searchByISBN, guessReadingDays, parseUtterance, storeLinks, fetchExtras } from "./enrich.js";
 import { startDictation, hasMic } from "./audio.js";
 import { startScanner } from "./scan.js";
 import { readEpubMeta } from "./epub.js";
@@ -28,8 +28,8 @@ const state = { session: null, books: [], filter: "all", search: "", view: "shel
 // Vorschau-Modus (index.html#demo): Design ohne Login/DB ansehen. In Produktion unsichtbar.
 const DEMO = location.hash.includes("demo");
 const DEMO_BOOKS = [
-  { id: "d1", title: "Soloalbum", author: "Benjamin von Stuckrad-Barre", page_count: 240, published_year: 1998, publisher: "Kiepenheuer & Witsch", status: "read", rating: 4, cover_url: null, isbn13: "9783462027004" },
-  { id: "d2", title: "Tschick", author: "Wolfgang Herrndorf", page_count: 248, published_year: 2010, publisher: "Rowohlt", status: "read", rating: 5, cover_url: "https://covers.openlibrary.org/b/id/8418261-L.jpg" },
+  { id: "d1", title: "Soloalbum", author: "Benjamin von Stuckrad-Barre", page_count: 240, published_year: 1998, publisher: "Kiepenheuer & Witsch", status: "read", rating: 4, cover_url: null, isbn13: "9783462027004", isbn10: "3462027000", web_rating: 3.6, web_rating_count: 214, description: "Ein junger Musikjournalist stürzt nach dem Ende einer Beziehung in eine Krise: zwischen Plattenrezensionen, Popkultur und Liebeskummer erzählt Stuckrad-Barres Debüt vom Lebensgefühl einer Generation – rasant, komisch und voller Musik." },
+  { id: "d2", title: "Tschick", author: "Wolfgang Herrndorf", page_count: 248, published_year: 2010, publisher: "Rowohlt", status: "read", rating: 5, cover_url: "https://covers.openlibrary.org/b/id/8418261-L.jpg", isbn13: "9783871347108", web_rating: 4.4, web_rating_count: 1893, description: "Maik und der Russlanddeutsche Tschick brechen in einem geklauten Lada zu einer Reise durch die ostdeutsche Provinz auf – eine warmherzige, komische Coming-of-Age-Geschichte über Freundschaft und den Sommer des Lebens." },
   { id: "d3", title: "Die Vermessung der Welt", author: "Daniel Kehlmann", page_count: 272, published_year: 2005, publisher: "Rowohlt", status: "reading", rating: 0, cover_url: "https://covers.openlibrary.org/b/id/1165201-L.jpg" },
   { id: "d4", title: "Der Steppenwolf", author: "Hermann Hesse", page_count: 224, published_year: 1927, publisher: "S. Fischer", status: "read", rating: 5, cover_url: "https://covers.openlibrary.org/b/id/3221083-L.jpg" },
   { id: "d5", title: "Nachts ist es leiser in Teheran", author: "Shida Bazyar", page_count: 288, published_year: 2016, status: "want", rating: 0, cover_url: null },
@@ -77,6 +77,22 @@ function coverHTML(b, cls = "") {
   return `<div class="cover-wrap ${cls}">${status}${fallback}${img}</div>`;
 }
 function stars(n) { return n ? "★".repeat(n) + "☆".repeat(5 - n) : ""; }
+function escPlain(s) { return esc(String(s || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim()); }
+function webRatingHTML(b) {
+  if (!b.web_rating) return "";
+  return `<span class="wr-star">★</span> ${(+b.web_rating).toFixed(1)}` +
+    (b.web_rating_count ? ` <span class="wr-count">(${(+b.web_rating_count).toLocaleString("de-DE")})</span>` : "") +
+    ` <span class="wr-src">· Google Books</span>`;
+}
+function storeLinksHTML(b) {
+  return storeLinks(b).map((s) =>
+    `<a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.name)} ↗</a>`).join("");
+}
+function klappentextHTML(b) {
+  if (!b.description) return "";
+  return `<div class="klappentext"><div class="kt-label">Klappentext</div>
+    <p class="kt-text clamp">${escPlain(b.description)}</p></div>`;
+}
 
 // ================================================================
 //  Rendering: Auth vs Main
@@ -415,9 +431,11 @@ function bookFormHTML(b, isNew) {
           ${b.publisher ? esc(b.publisher) + "<br>" : ""}
           ${b.isbn13 ? "ISBN " + esc(b.isbn13) : ""}
         </div>
-        ${b.title ? `<a class="amazon-link" href="${esc(amazonUrl(b))}" target="_blank" rel="noopener">Bei Amazon ansehen ↗</a>` : ""}
+        <div class="web-rating" id="webRating">${webRatingHTML(b)}</div>
       </div>
     </div>
+    ${b.title ? `<div class="store-links" id="storeLinks">${storeLinksHTML(b)}</div>` : ""}
+    <div id="klappentext">${klappentextHTML(b)}</div>
 
     <div class="status-pick" id="statusPick">
       ${STATUSES.map(([k, l]) => `<button data-s="${k}" class="${(b.status || "read") === k ? "on" : ""}">${l}</button>`).join("")}
@@ -455,19 +473,33 @@ function bookFormHTML(b, isNew) {
     </div>`;
 }
 
-function openReview(b) {
+async function openReview(b) {
+  // Klappentext/Bewertung ergänzen, BEVOR gerendert wird (damit es beim Speichern mitkommt)
+  const ex = await fetchExtras(b);
+  Object.assign(b, ex);
   openSheet(bookFormHTML(b, true));
   bindForm(b, true);
 }
-function openDetail(b) {
-  openSheet(bookFormHTML(b, false));
+async function openDetail(b) {
+  openSheet(bookFormHTML(b, false));   // vorhandenes Buch sofort zeigen
   bindForm(b, false);
+  const ex = await fetchExtras(b);      // fehlende Infos im Hintergrund nachtragen
+  if (ex && (ex.description || ex.web_rating != null)) {
+    Object.assign(b, ex);
+    const wr = $("#webRating"); if (wr) wr.innerHTML = webRatingHTML(b);
+    const kt = $("#klappentext"); if (kt) { kt.innerHTML = klappentextHTML(b); bindKlappentext(); }
+  }
+}
+function bindKlappentext() {
+  const t = document.querySelector(".kt-text");
+  if (t) t.onclick = () => t.classList.toggle("clamp");
 }
 
 function bindForm(b, isNew) {
   const draft = { ...b };
   draft.status = draft.status || "read";
   draft.rating = draft.rating || 0;
+  bindKlappentext();
 
   // Sterne
   const paint = () => document.querySelectorAll("#stars .s").forEach((s) =>
