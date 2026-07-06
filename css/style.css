@@ -300,6 +300,8 @@ textarea.input { resize: vertical; min-height: 70px; line-height: 1.5; }
 .stat-card .num { font-family: var(--serif); font-size: 33px; font-weight: 600; color: var(--accent); line-height: 1; }
 .stat-card .lab { font-size: 13px; color: var(--ink-soft); margin-top: 6px; }
 .section-title { font-family: var(--serif); font-size: 18px; font-weight: 600; margin: 24px 0 12px; }
+.data-actions { display: flex; gap: 9px; flex-wrap: wrap; }
+.data-actions .btn { flex: 1; min-width: 120px; }
 
 /* ---------------- Auth ---------------- */
 .auth { max-width: 380px; margin: 0 auto; padding: 8vh 24px 0; text-align: center; }

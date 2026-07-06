@@ -55,6 +55,13 @@ export async function insertBook(book) {
   return data;
 }
 
+// Viele Bücher auf einmal einfügen (Import). user_id füllt die DB per Default (auth.uid()).
+export async function insertBooks(books) {
+  const { data, error } = await supa.from("books").insert(books).select();
+  if (error) throw error;
+  return data || [];
+}
+
 export async function updateBook(id, patch) {
   const { data, error } = await supa.from("books").update(patch).eq("id", id).select().single();
   if (error) throw error;

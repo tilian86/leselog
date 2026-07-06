@@ -10,6 +10,7 @@ const SHELL = [
   "./js/audio.js",
   "./js/scan.js",
   "./js/epub.js",
+  "./js/io.js",
   "./js/app.js",
   "./manifest.webmanifest",
   "./icons/icon-192.png",

@@ -1,11 +1,12 @@
 // Leselog – App-Steuerung
 import { CONFIG } from "./config.js";
 import { currentSession, onAuth, signInPassword, signUpPassword, signOut,
-         fetchBooks, insertBook, updateBook, removeBook } from "./supa.js";
+         fetchBooks, insertBook, insertBooks, updateBook, removeBook } from "./supa.js";
 import { searchBooks, searchByISBN, guessReadingDays, parseUtterance, amazonUrl } from "./enrich.js";
 import { startDictation, hasMic } from "./audio.js";
 import { startScanner } from "./scan.js";
 import { readEpubMeta } from "./epub.js";
+import { booksToCSV, booksToJSON, download, parseImportFile } from "./io.js";
 
 // ---------------- Icons ----------------
 const I = {
@@ -221,9 +222,31 @@ function renderStats(main) {
     </div>
     ${top.length ? `<div class="section-title">Deine Favoriten</div>
       <div class="shelf">${top.map(bookCardHTML).join("")}</div>` : ""}
-    <div style="height:20px"></div>
+
+    <div class="section-title">Deine Daten</div>
+    <p style="color:var(--ink-soft);font-size:13.5px;margin:-6px 0 12px">Deine Bücher gehören dir. Exportiere sie jederzeit oder hol dir eine Liste aus einer anderen App rein.</p>
+    <div class="data-actions">
+      <button class="btn" id="expCsv">CSV exportieren</button>
+      <button class="btn" id="expJson">Backup (JSON)</button>
+      <button class="btn" id="impBtn">Importieren</button>
+    </div>
+    <input type="file" id="impFile" accept=".csv,.json,text/csv,application/json" class="hidden">
+
+    <div style="height:24px"></div>
     <button class="btn ghost block" id="logoutBtn" style="color:var(--ink-soft)">Abmelden</button>`;
   bindCards();
+  $("#expCsv").onclick = () => {
+    if (!state.books.length) return toast("Noch keine Bücher zum Exportieren");
+    download("leselog-buecher.csv", booksToCSV(state.books), "text/csv");
+    toast(state.books.length + " Bücher als CSV exportiert");
+  };
+  $("#expJson").onclick = () => {
+    if (!state.books.length) return toast("Noch keine Bücher zum Sichern");
+    download("leselog-backup.json", booksToJSON(state.books), "application/json");
+    toast("Backup gespeichert");
+  };
+  $("#impBtn").onclick = () => $("#impFile").click();
+  $("#impFile").onchange = (e) => { if (e.target.files[0]) runImport(e.target.files[0]); };
   $("#logoutBtn").onclick = async () => { await signOut(); };
 }
 
@@ -567,6 +590,69 @@ async function onEpub(file) {
     } catch (_) {}
     openReview(enriched);
   } catch (e) { toast("EPUB konnte nicht gelesen werden"); console.error(e); openAdd(); }
+}
+
+// ================================================================
+//  Import
+// ================================================================
+function bookKey(b) {
+  return b.isbn13 ? "i:" + b.isbn13
+    : ("t:" + (b.title || "").toLowerCase().trim() + "|" + (b.author || "").toLowerCase().trim());
+}
+
+async function runImport(file) {
+  openSheet(`<h2>Datei wird gelesen …</h2><div class="center-load"><span class="spin dark"></span>${esc(file.name)}</div>`);
+  let parsed;
+  try { parsed = await parseImportFile(file); }
+  catch (e) { toast("Datei konnte nicht gelesen werden"); console.error(e); openAdd(); return; }
+
+  if (!parsed.length) {
+    openSheet(`<h2>Nichts gefunden</h2><p class="sub">In „${esc(file.name)}" konnte ich keine Bücher erkennen. Unterstützt werden CSV (auch von Goodreads) und JSON.</p>
+      <button class="btn block" id="closeImp">Okay</button>`);
+    $("#closeImp").onclick = closeSheet; return;
+  }
+
+  // Duplikate gegen vorhandenes Regal aussortieren
+  const existing = new Set(state.books.map(bookKey));
+  const fresh = parsed.filter((b) => !existing.has(bookKey(b)));
+  const dupes = parsed.length - fresh.length;
+
+  const preview = fresh.slice(0, 5).map((b) =>
+    `<div class="cand"><div class="mini" style="width:34px;height:50px"></div>
+      <div class="c-main"><div class="c-title">${esc(b.title)}</div>
+      <div class="c-meta">${esc(b.author || "Unbekannt")}${b.status !== "read" ? " · " + STATUS_LABEL[b.status] : ""}</div></div></div>`).join("");
+
+  openSheet(`
+    <h2>${fresh.length} ${fresh.length === 1 ? "Buch" : "Bücher"} gefunden</h2>
+    <p class="sub">${dupes ? dupes + " Dubletten überspringe ich. " : ""}Sollen diese in dein Regal?</p>
+    ${preview}
+    ${fresh.length > 5 ? `<p class="sub" style="text-align:center">… und ${fresh.length - 5} weitere</p>` : ""}
+    <div class="sheet-actions">
+      <button class="btn ghost" id="cancelImp">Abbrechen</button>
+      <button class="btn primary" id="doImp">${fresh.length} importieren</button>
+    </div>`);
+  $("#cancelImp").onclick = closeSheet;
+  if (!fresh.length) { $("#doImp").textContent = "Nichts Neues"; $("#doImp").disabled = true; return; }
+
+  $("#doImp").onclick = async () => {
+    const btn = $("#doImp"); btn.innerHTML = '<span class="spin"></span>'; btn.disabled = true;
+    try {
+      let saved = [];
+      if (DEMO) {
+        saved = fresh.map((b, i) => ({ ...b, id: "imp" + Date.now() + i }));
+      } else {
+        for (let i = 0; i < fresh.length; i += 200) {
+          const chunk = fresh.slice(i, i + 200).map((b) => {
+            const c = { ...b }; delete c.id; delete c.user_id; delete c.created_at; delete c.updated_at; return c;
+          });
+          saved = saved.concat(await insertBooks(chunk));
+        }
+      }
+      state.books = saved.concat(state.books);
+      closeSheet(); renderMain();
+      toast(saved.length + " Bücher importiert 📚");
+    } catch (e) { toast(e.message || "Import fehlgeschlagen"); btn.innerHTML = "Nochmal"; btn.disabled = false; console.error(e); }
+  };
 }
 
 // ================================================================
