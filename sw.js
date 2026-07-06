@@ -1,5 +1,5 @@
 // Leselog Service Worker – App-Shell offline verfügbar machen.
-const CACHE = "leselog-v1";
+const CACHE = "leselog-v2";
 const SHELL = [
   "./",
   "./index.html",
@@ -35,18 +35,16 @@ self.addEventListener("fetch", (e) => {
   // Nur GET und nur eigene Dateien cachen. API-Aufrufe (Supabase, Google Books) immer live.
   if (e.request.method !== "GET" || url.origin !== self.location.origin) return;
 
+  // Network-first: immer die frischste Version holen, Cache nur als Offline-Fallback.
   e.respondWith(
-    caches.match(e.request).then((cached) => {
-      const live = fetch(e.request)
-        .then((res) => {
-          if (res && res.status === 200) {
-            const copy = res.clone();
-            caches.open(CACHE).then((c) => c.put(e.request, copy));
-          }
-          return res;
-        })
-        .catch(() => cached);
-      return cached || live;
-    })
+    fetch(e.request)
+      .then((res) => {
+        if (res && res.status === 200) {
+          const copy = res.clone();
+          caches.open(CACHE).then((c) => c.put(e.request, copy));
+        }
+        return res;
+      })
+      .catch(() => caches.match(e.request))
   );
 });
