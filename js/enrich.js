@@ -148,6 +148,67 @@ export async function searchByISBN(isbn) {
   return null;
 }
 
+// Gesprochenen Satz verstehen: Absicht (gelesen / lese gerade / will lesen) erkennen
+// und den eigentlichen Buchtitel aus Füllwörtern herausschälen.
+// Beispiel: "Also ich möchte Soloalbum lesen" -> { query: "Soloalbum", status: "want" }
+export function parseUtterance(text) {
+  const raw = (text || "").trim();
+  const t = " " + raw.toLowerCase().replace(/[.!?,;]/g, " ") + " ";
+
+  let status = "read"; // Standard: Logbuch gelesener Bücher
+  const wantsToRead =
+    (/\b(will|möchte|moechte|wollte|muss|müsste|sollte|würde gern|wuerde gern)\b/.test(t) && /\blesen\b/.test(t)) ||
+    /\b(vormerken|vormerk)\b/.test(t) ||
+    /(auf (die|meine)|zur).{0,25}(will[- ]?lese|lese ?liste|merk ?liste|wunschliste)/.test(t) ||
+    /\bnoch lesen\b/.test(t);
+  const currentlyReading =
+    /\b(lese|les)\b.{0,15}\b(gerade|grade|zurzeit|zur zeit|aktuell|momentan)\b/.test(t) ||
+    /\bgerade (am lesen|dabei|mitten)\b/.test(t) ||
+    /\bbin (gerade )?(dabei|mitten|am lesen)\b/.test(t) ||
+    /\bam lesen\b/.test(t);
+  const alreadyRead =
+    /\b(gelesen|durchgelesen|ausgelesen|durch|fertig|beendet)\b/.test(t);
+
+  if (wantsToRead) status = "want";
+  else if (currentlyReading) status = "reading";
+  else if (alreadyRead) status = "read";
+
+  // Titel herausschälen: Füll- und Absichtswörter entfernen
+  let q = raw;
+  const strip = [
+    /^\s*(also|ähm|aehm|äh|ja|so|hey|okay|ok|nun|und)\b/gi,
+    /\bich (möchte|moechte|will|wollte|muss|müsste|würde gern[e]?|wuerde gern[e]?|habe?|hab)\b/gi,
+    /\b(möchte|moechte|will|wollte|müsste|sollte)\b/gi,
+    /\bgerne?\b/gi, /\bgrade\b/gi, /\bgerade\b/gi, /\bzurzeit\b/gi, /\bzur zeit\b/gi,
+    /\baktuell\b/gi, /\bmomentan\b/gi, /\bbin (dabei|mitten|am)\b/gi, /\bam lesen\b/gi,
+    /\bdas buch\b/gi, /\bden roman\b/gi, /\bden titel\b/gi, /\bdie geschichte\b/gi,
+    /\b(durch)?gelesen\b/gi, /\bausgelesen\b/gi, /\blesen\b/gi, /\blese\b/gi,
+    /\bvormerken\b/gi, /\bauf (die|meine) (will[- ]?lese|lese|merk|wunsch)liste\b/gi,
+    /\bnoch\b/gi, /\bschon\b/gi, /\bmal\b/gi, /\beinfach\b/gi, /\bjetzt\b/gi,
+    /\bfertig\b/gi, /\bbeendet\b/gi, /\bgerade dabei\b/gi,
+  ];
+  strip.forEach((re) => { q = q.replace(re, " "); });
+  q = q.replace(/\s+/g, " ").trim().replace(/^[,:\.\-\s]+|[,:\.\-\s]+$/g, "");
+
+  // Übrig gebliebene Füllwörter am Anfang/Ende abschneiden (Artikel wie "Der/Die"
+  // bleiben stehen, weil sie Teil von Titeln sein können; "in/am" nur am Rand).
+  const edge = new Set(["ich","hab","habe","hatte","bin","also","so","ja","unbedingt",
+    "mal","halt","eben","gerade","grade","mitten","jetzt","in","im","am","an","zu","und","dann","noch"]);
+  let toks = q.split(/\s+/).filter(Boolean);
+  while (toks.length > 1 && edge.has(toks[0].toLowerCase().replace(/[,.:;]/g, ""))) toks.shift();
+  while (toks.length > 1 && edge.has(toks[toks.length - 1].toLowerCase().replace(/[,.:;]/g, ""))) toks.pop();
+  q = toks.join(" ").replace(/^[,:\.\-\s]+|[,:\.\-\s]+$/g, "");
+  if (!q) q = raw; // niemals leer suchen
+  return { query: q, status, rawInput: raw };
+}
+
+// Amazon-Link zu einem Buch (ISBN bevorzugt, sonst Titelsuche) – amazon.de
+export function amazonUrl(b) {
+  if (b.isbn10) return "https://www.amazon.de/dp/" + b.isbn10;
+  const term = [b.title, b.author].filter(Boolean).join(" ") || b.isbn13 || "";
+  return "https://www.amazon.de/s?k=" + encodeURIComponent(term) + "&i=stripbooks";
+}
+
 // Aus einer gesprochenen/getippten Phrase grob Lesedauer erkennen ("3 Tage", "zwei Wochen")
 const WORDNUM = { ein:1, eine:1, eins:1, zwei:2, drei:3, vier:4, fünf:5, sechs:6, sieben:7, acht:8, neun:9, zehn:10 };
 export function guessReadingDays(text) {

@@ -1,8 +1,8 @@
 // Leselog – App-Steuerung
 import { CONFIG } from "./config.js";
-import { currentSession, onAuth, sendMagicLink, signOut,
+import { currentSession, onAuth, sendMagicLink, verifyEmailOtp, signOut,
          fetchBooks, insertBook, updateBook, removeBook } from "./supa.js";
-import { searchBooks, searchByISBN, guessReadingDays } from "./enrich.js";
+import { searchBooks, searchByISBN, guessReadingDays, parseUtterance, amazonUrl } from "./enrich.js";
 import { startDictation, hasMic } from "./audio.js";
 import { startScanner } from "./scan.js";
 import { readEpubMeta } from "./epub.js";
@@ -103,7 +103,20 @@ async function renderScreen() {
         await sendMagicLink(email);
         $(".auth").innerHTML = `<div class="logo">${I.book}</div>
           <h1>Schau in dein Postfach</h1>
-          <p>Wir haben dir einen Login-Link an <b>${esc(email)}</b> geschickt. Öffne ihn auf diesem Gerät.</p>`;
+          <p>Wir haben dir eine E-Mail an <b>${esc(email)}</b> geschickt. Tippe hier den <b>6-stelligen Code</b> daraus ein:</p>
+          <input class="input" id="otp" inputmode="numeric" autocomplete="one-time-code" maxlength="6"
+                 placeholder="––––––" style="letter-spacing:8px;text-align:center;font-size:24px;font-weight:600">
+          <button class="btn primary block" id="verifyBtn" style="margin-top:12px">Anmelden</button>
+          <p style="margin-top:16px;font-size:13px">Alternativ kannst du im <b>Safari-Browser</b> einfach den Link in der Mail antippen.</p>`;
+        const verify = async () => {
+          const token = ($("#otp").value || "").replace(/\D/g, "");
+          if (token.length < 6) return toast("Bitte den 6-stelligen Code eingeben");
+          const vb = $("#verifyBtn"); vb.innerHTML = '<span class="spin"></span>'; vb.disabled = true;
+          try { await verifyEmailOtp(email, token); } // onAuth rendert die App
+          catch (e) { toast(e.message || "Code ungültig oder abgelaufen"); vb.innerHTML = "Anmelden"; vb.disabled = false; }
+        };
+        $("#verifyBtn").onclick = verify;
+        $("#otp").addEventListener("keydown", (e) => { if (e.key === "Enter") verify(); });
       } catch (e) { toast(e.message || "Fehlgeschlagen"); btn.innerHTML = "Login-Link schicken"; btn.disabled = false; }
     };
     return;
@@ -250,9 +263,16 @@ function openAdd() {
     </div>
     <input type="file" id="epubFile" accept=".epub" class="hidden">
   `);
+  const doTyped = () => {
+    const v = $("#titleInp").value.trim();
+    if (!v) return;
+    const parsed = parseUtterance(v);
+    parsed.source = "manual";
+    runSearch(parsed);
+  };
   $("#micBtn").onclick = onMic;
-  $("#titleGo").onclick = () => runSearch($("#titleInp").value);
-  $("#titleInp").addEventListener("keydown", (e) => { if (e.key === "Enter") runSearch($("#titleInp").value); });
+  $("#titleGo").onclick = doTyped;
+  $("#titleInp").addEventListener("keydown", (e) => { if (e.key === "Enter") doTyped(); });
   $("#scanBtn").onclick = openScanner;
   $("#epubBtn").onclick = () => $("#epubFile").click();
   $("#epubFile").onchange = (e) => { if (e.target.files[0]) onEpub(e.target.files[0]); };
@@ -272,7 +292,9 @@ async function onMic() {
       const text = await activeDictation.stop();
       activeDictation = null;
       if (!text) { status.textContent = "Nichts verstanden – bitte nochmal."; resetMic(); return; }
-      runSearch(text, text);
+      const parsed = parseUtterance(text);
+      parsed.source = "voice";
+      runSearch(parsed);
     } catch (e) { toast(e.message || "Transkription fehlgeschlagen"); activeDictation = null; resetMic(); }
     return;
   }
@@ -298,28 +320,37 @@ function resetMic() {
 // ================================================================
 //  Suche & Kandidaten
 // ================================================================
-async function runSearch(query, rawInput) {
-  query = (query || "").trim();
+const STATUS_LABEL = { read: "Gelesen", reading: "Lese gerade", want: "Will lesen" };
+
+async function runSearch(parsed) {
+  const query = (parsed.query || "").trim();
+  const rawInput = parsed.rawInput || null;
+  const status = parsed.status || "read";
+  const source = parsed.source || (rawInput ? "voice" : "manual");
   if (!query) return;
   openSheet(`<h2>Ich suche …</h2><div class="center-load"><span class="spin dark"></span>
     „${esc(query)}“ wird nachgeschlagen</div>`);
   try {
     const results = await searchBooks(query);
     if (!results.length) {
+      const base = { title: query, raw_input: rawInput, status, source };
       openSheet(`<h2>Nichts gefunden</h2>
         <p class="sub">Zu „${esc(query)}“ habe ich nichts gefunden. Trag es von Hand ein:</p>
-        ${bookFormHTML({ title: query, raw_input: rawInput, source: rawInput ? "voice" : "manual" }, true)}`);
-      bindForm({ title: query, raw_input: rawInput, source: rawInput ? "voice" : "manual" }, true);
+        ${bookFormHTML(base, true)}`);
+      bindForm(base, true);
       return;
     }
-    showCandidates(results, rawInput);
+    showCandidates(results, { rawInput, status, source, query });
   } catch (e) { toast(e.message || "Suche fehlgeschlagen"); console.error(e); }
 }
 
-function showCandidates(results, rawInput) {
+function showCandidates(results, parsed) {
+  const { rawInput, status = "read", source = "manual" } = parsed;
+  const intentNote = status !== "read"
+    ? ` <span style="color:var(--accent);font-weight:600">→ ${STATUS_LABEL[status]}</span>` : "";
   openSheet(`
     <h2>Welches Buch ist es?</h2>
-    <p class="sub">${rawInput ? "„" + esc(rawInput) + "“ – " : ""}tippe das richtige an.</p>
+    <p class="sub">${rawInput ? "„" + esc(rawInput) + "“" : "Dein Treffer"}${intentNote} – tippe das richtige an.</p>
     <div id="cands">${results.map((b, i) => `
       <div class="cand" data-i="${i}">
         ${b.cover_url ? `<img class="mini" src="${esc(b.cover_url)}" onerror="this.style.visibility='hidden'">`
@@ -335,14 +366,12 @@ function showCandidates(results, rawInput) {
   `);
   document.querySelectorAll(".cand").forEach((c) =>
     c.onclick = () => {
-      const b = { ...results[c.dataset.i] };
-      if (rawInput) { b.raw_input = rawInput; b.source = "voice"; b.reading_days = guessReadingDays(rawInput); }
-      else b.source = "manual";
+      const b = { ...results[c.dataset.i], status, source };
+      if (rawInput) { b.raw_input = rawInput; if (status === "read") b.reading_days = guessReadingDays(rawInput); }
       openReview(b);
     });
   $("#noneBtn").onclick = () => {
-    const b = { title: rawInput || "", raw_input: rawInput, source: rawInput ? "voice" : "manual" };
-    openReview(b);
+    openReview({ title: parsed.query || rawInput || "", raw_input: rawInput, status, source });
   };
 }
 
@@ -365,6 +394,7 @@ function bookFormHTML(b, isNew) {
           ${b.publisher ? esc(b.publisher) + "<br>" : ""}
           ${b.isbn13 ? "ISBN " + esc(b.isbn13) : ""}
         </div>
+        ${b.title ? `<a class="amazon-link" href="${esc(amazonUrl(b))}" target="_blank" rel="noopener">Bei Amazon ansehen ↗</a>` : ""}
       </div>
     </div>
 

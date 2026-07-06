@@ -25,6 +25,13 @@ export async function sendMagicLink(email) {
   if (error) throw error;
 }
 
+// 6-stelligen Code aus der E-Mail prüfen (funktioniert auch in der Home-Screen-App)
+export async function verifyEmailOtp(email, token) {
+  const { data, error } = await supa.auth.verifyOtp({ email, token: token.trim(), type: "email" });
+  if (error) throw error;
+  return data;
+}
+
 export async function signOut() { await supa.auth.signOut(); }
 
 // ---------- Bücher ----------

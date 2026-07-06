@@ -258,6 +258,10 @@ a { color: var(--accent); }
 .detail-hero h2 { margin: 0 0 3px; font-size: 22px; line-height: 1.2; }
 .detail-hero .dh-author { color: var(--ink-soft); font-size: 15px; }
 .detail-hero .dh-facts { font-size: 13px; color: var(--ink-faint); margin-top: 8px; line-height: 1.6; }
+.amazon-link { display: inline-flex; margin-top: 10px; font-size: 13px; font-weight: 600;
+  color: var(--accent); text-decoration: none; padding: 7px 12px; border: 1px solid var(--line);
+  border-radius: 9px; background: var(--paper-2); }
+.amazon-link:active { transform: scale(0.97); }
 
 .stars-input { display: flex; gap: 4px; font-size: 27px; color: var(--line); }
 .stars-input .s.on { color: var(--gold); }
