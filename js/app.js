@@ -1,6 +1,6 @@
 // Leselog – App-Steuerung
 import { CONFIG } from "./config.js";
-import { currentSession, onAuth, sendMagicLink, verifyEmailOtp, signOut,
+import { currentSession, onAuth, signInPassword, signUpPassword, signOut,
          fetchBooks, insertBook, updateBook, removeBook } from "./supa.js";
 import { searchBooks, searchByISBN, guessReadingDays, parseUtterance, amazonUrl } from "./enrich.js";
 import { startDictation, hasMic } from "./audio.js";
@@ -91,34 +91,32 @@ async function renderScreen() {
         <p>Dein persönliches Regal für alle gelesenen Bücher.</p>
         <input class="input" id="email" type="email" inputmode="email" autocomplete="email"
                placeholder="deine@email.de" />
-        <button class="btn primary block" id="loginBtn">Login-Link schicken</button>
-        <p style="margin-top:16px;font-size:13px">Du bekommst eine E-Mail mit einem Link – ein Klick, fertig. Kein Passwort.</p>
+        <input class="input" id="pw" type="password" autocomplete="current-password"
+               placeholder="Passwort" style="margin-top:10px" />
+        <button class="btn primary block" id="loginBtn" style="margin-top:12px">Anmelden</button>
+        <p style="margin-top:16px;font-size:13px">Beim ersten Mal wird dein Konto automatisch angelegt. Danach bleibst du auf diesem Gerät angemeldet.</p>
       </div>`;
-    $("#loginBtn").onclick = async () => {
+    const login = async () => {
       const email = $("#email").value.trim();
-      if (!email) return toast("Bitte E-Mail eingeben");
+      const password = $("#pw").value;
+      if (!email || !password) return toast("E-Mail und Passwort eingeben");
+      if (password.length < 6) return toast("Passwort: mindestens 6 Zeichen");
       const btn = $("#loginBtn");
       btn.innerHTML = '<span class="spin"></span>'; btn.disabled = true;
       try {
-        await sendMagicLink(email);
-        $(".auth").innerHTML = `<div class="logo">${I.book}</div>
-          <h1>Schau in dein Postfach</h1>
-          <p>Wir haben dir eine E-Mail an <b>${esc(email)}</b> geschickt. Tippe hier den <b>6-stelligen Code</b> daraus ein:</p>
-          <input class="input" id="otp" inputmode="numeric" autocomplete="one-time-code" maxlength="6"
-                 placeholder="––––––" style="letter-spacing:8px;text-align:center;font-size:24px;font-weight:600">
-          <button class="btn primary block" id="verifyBtn" style="margin-top:12px">Anmelden</button>
-          <p style="margin-top:16px;font-size:13px">Alternativ kannst du im <b>Safari-Browser</b> einfach den Link in der Mail antippen.</p>`;
-        const verify = async () => {
-          const token = ($("#otp").value || "").replace(/\D/g, "");
-          if (token.length < 6) return toast("Bitte den 6-stelligen Code eingeben");
-          const vb = $("#verifyBtn"); vb.innerHTML = '<span class="spin"></span>'; vb.disabled = true;
-          try { await verifyEmailOtp(email, token); } // onAuth rendert die App
-          catch (e) { toast(e.message || "Code ungültig oder abgelaufen"); vb.innerHTML = "Anmelden"; vb.disabled = false; }
-        };
-        $("#verifyBtn").onclick = verify;
-        $("#otp").addEventListener("keydown", (e) => { if (e.key === "Enter") verify(); });
-      } catch (e) { toast(e.message || "Fehlgeschlagen"); btn.innerHTML = "Login-Link schicken"; btn.disabled = false; }
+        await signInPassword(email, password); // onAuth rendert die App
+      } catch (e) {
+        // Noch kein Konto? Dann anlegen.
+        try { await signUpPassword(email, password); toast("Konto erstellt – willkommen! 📚"); }
+        catch (e2) {
+          const msg = /already registered|already exists|registered/i.test(e2.message || "")
+            ? "Falsches Passwort" : (e2.message || e.message || "Anmeldung fehlgeschlagen");
+          toast(msg); btn.innerHTML = "Anmelden"; btn.disabled = false;
+        }
+      }
     };
+    $("#loginBtn").onclick = login;
+    $("#pw").addEventListener("keydown", (e) => { if (e.key === "Enter") login(); });
     return;
   }
 
