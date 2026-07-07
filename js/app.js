@@ -20,10 +20,13 @@ const I = {
   epub: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>',
   chevron: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>',
   info: '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>',
+  list: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>',
+  grid: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>',
 };
 
 // ---------------- State ----------------
-const state = { session: null, books: [], filter: "all", search: "", view: "shelf" };
+const state = { session: null, books: [], filter: "all", search: "", view: "shelf",
+  layout: localStorage.getItem("leselog_layout") || "grid" };
 
 // Vorschau-Modus (index.html#demo): Design ohne Login/DB ansehen. In Produktion unsichtbar.
 const DEMO = location.hash.includes("demo");
@@ -177,19 +180,44 @@ function renderMain() {
   main.innerHTML = `
     <div class="toolbar">
       <div class="search">${I.search}<input id="searchInp" placeholder="Titel oder Autor suchen…" value="${esc(state.search)}"></div>
+      <button class="icon-btn" id="layoutBtn" aria-label="Ansicht wechseln">${state.layout === "list" ? I.grid : I.list}</button>
     </div>
     <div class="seg">${filters.map(([k, l]) =>
       `<button data-f="${k}" class="${state.filter === k ? "on" : ""}">${l}</button>`).join("")}</div>
     <div style="height:16px"></div>
-    ${list.length ? `<div class="shelf">${list.map(bookCardHTML).join("")}</div>` : emptyHTML()}`;
+    <div id="shelfWrap">${shelfHTML(list)}</div>`;
 
   const si = $("#searchInp");
-  si.oninput = () => { state.search = si.value; const l = liveList(); $(".shelf") &&
-    ($(".shelf").outerHTML = l.length ? `<div class="shelf">${l.map(bookCardHTML).join("")}</div>` : emptyHTML());
-    bindCards(); };
+  si.oninput = () => { state.search = si.value; $("#shelfWrap").innerHTML = shelfHTML(liveList()); bindCards(); };
+  $("#layoutBtn").onclick = () => {
+    state.layout = state.layout === "grid" ? "list" : "grid";
+    localStorage.setItem("leselog_layout", state.layout);
+    renderMain();
+  };
   main.querySelectorAll(".seg button").forEach((b) =>
     b.onclick = () => { state.filter = b.dataset.f; renderMain(); });
   bindCards();
+}
+
+function shelfHTML(list) {
+  if (!list.length) return emptyHTML();
+  if (state.layout === "list") return `<div class="shelf-list">${list.map(rowHTML).join("")}</div>`;
+  return `<div class="shelf">${list.map(bookCardHTML).join("")}</div>`;
+}
+function rowHTML(b) {
+  const cov = b.cover_url
+    ? `<img src="${esc(b.cover_url)}" alt="" loading="lazy" onerror="this.remove()">` : "";
+  const st = b.status && b.status !== "read"
+    ? `<span class="row-status ${b.status}">${b.status === "reading" ? "Lese gerade" : "Will lesen"}</span>` : "";
+  return `<div class="row-book" data-id="${b.id}">
+    <div class="cover-wrap thumb"><div class="cover-fallback"><div class="ft">${esc(b.title)}</div></div>${cov}</div>
+    <div class="row-main">
+      <div class="row-title">${esc(b.title)}</div>
+      <div class="row-author">${esc(b.author || "Unbekannt")}</div>
+      ${b.rating ? `<div class="b-stars">${stars(b.rating)}</div>` : ""}
+    </div>
+    ${st}
+  </div>`;
 }
 
 function liveList() {
@@ -200,7 +228,7 @@ function liveList() {
   return list;
 }
 function bindCards() {
-  document.querySelectorAll(".book").forEach((c) =>
+  document.querySelectorAll(".book, .row-book").forEach((c) =>
     c.onclick = () => openDetail(state.books.find((b) => b.id === c.dataset.id)));
 }
 function bookCardHTML(b) {
@@ -241,6 +269,7 @@ function renderStats(main) {
 
     <div class="section-title">Deine Daten</div>
     <p style="color:var(--ink-soft);font-size:13.5px;margin:-6px 0 12px">Deine Bücher gehören dir. Exportiere sie jederzeit oder hol dir eine Liste aus einer anderen App rein.</p>
+    <button class="btn block" id="enrichBtn" style="margin-bottom:10px">✨ Cover &amp; Infos nachladen</button>
     <div class="data-actions">
       <button class="btn" id="expCsv">CSV exportieren</button>
       <button class="btn" id="expJson">Backup (JSON)</button>
@@ -263,6 +292,11 @@ function renderStats(main) {
   };
   $("#impBtn").onclick = () => $("#impFile").click();
   $("#impFile").onchange = (e) => { if (e.target.files[0]) runImport(e.target.files[0]); };
+  $("#enrichBtn").onclick = async () => {
+    const btn = $("#enrichBtn"); btn.disabled = true; btn.textContent = "Lädt …";
+    await enrichMissingCovers();
+    if ($("#enrichBtn")) { $("#enrichBtn").disabled = false; $("#enrichBtn").innerHTML = "✨ Cover &amp; Infos nachladen"; }
+  };
   $("#logoutBtn").onclick = async () => { await signOut(); };
 }
 
@@ -280,48 +314,73 @@ async function loadBooks() {
   } catch (e) { toast("Konnte Bücher nicht laden"); console.error(e); }
 }
 
-// Importierte Bücher im Hintergrund über Google Books vervollständigen
-// (Cover, ISBN, Seiten, Jahr, Verlag, Klappentext, Web-Bewertung). Läuft nur einmal pro Buch.
+// Importierte Bücher automatisch über Google Books vervollständigen
+// (Cover, ISBN, Seiten, Jahr, Verlag, Klappentext, Web-Bewertung).
 function titleWords(s) {
   return new Set(String(s || "").toLowerCase().split(/[:–\-]/)[0]
     .replace(/[^a-z0-9äöüß ]/g, " ").split(/\s+/).filter((w) => w.length > 3));
 }
-async function autoEnrich() {
-  if (DEMO) return;
-  const todo = state.books.filter((b) => !b.enriched && b.source === "import");
-  if (!todo.length) return;
-  let done = 0;
-  for (const b of todo) {
-    const patch = { enriched: true };
-    try {
-      const q = [b.title, (b.author || "").split(",")[0]].filter(Boolean).join(" ");
-      const hit = (await searchBooks(q))[0];
-      if (hit) {
-        // Nur übernehmen, wenn der Titel plausibel passt (kein falsches Cover)
-        const qw = titleWords(b.title), hw = titleWords(hit.title);
-        const overlap = qw.size ? [...qw].filter((w) => hw.has(w)).length / qw.size : 0;
-        if (overlap >= 0.4) {
-          if (hit.cover_url) patch.cover_url = hit.cover_url;
-          if (hit.isbn13) patch.isbn13 = hit.isbn13;
-          if (hit.isbn10) patch.isbn10 = hit.isbn10;
-          if (hit.page_count) patch.page_count = hit.page_count;
-          if (hit.published_year) patch.published_year = hit.published_year;
-          if (hit.publisher) patch.publisher = hit.publisher;
-          if (hit.description) patch.description = hit.description;
-          if (hit.web_rating != null) { patch.web_rating = hit.web_rating; patch.web_rating_count = hit.web_rating_count; }
-          if (hit.google_books_id) patch.google_books_id = hit.google_books_id;
-        }
-      }
-    } catch (_) {}
+function pickHit(b, results) {
+  const qw = titleWords(b.title);
+  const scored = results.map((h) => {
+    const hw = titleWords(h.title);
+    const ov = qw.size ? [...qw].filter((w) => hw.has(w)).length / qw.size : (h.title ? 1 : 0);
+    return { h, score: ov + (h.cover_url ? 0.3 : 0), ov };
+  }).filter((x) => x.ov >= 0.34);
+  scored.sort((a, b2) => b2.score - a.score);
+  return scored.length ? scored[0].h : null;
+}
+async function enrichOne(b) {
+  const patch = {};
+  try {
+    const q = [b.title, (b.author || "").split(",")[0]].filter(Boolean).join(" ");
+    let hit = pickHit(b, await searchBooks(q));
+    if (!hit) hit = pickHit(b, await searchBooks(b.title)); // 2. Versuch: nur Titel
+    if (hit) {
+      if (hit.cover_url) patch.cover_url = hit.cover_url;
+      if (hit.isbn13) patch.isbn13 = hit.isbn13;
+      if (hit.isbn10) patch.isbn10 = hit.isbn10;
+      if (hit.page_count) patch.page_count = hit.page_count;
+      if (hit.published_year) patch.published_year = hit.published_year;
+      if (hit.publisher) patch.publisher = hit.publisher;
+      if (hit.description) patch.description = hit.description;
+      if (hit.web_rating != null) { patch.web_rating = hit.web_rating; patch.web_rating_count = hit.web_rating_count; }
+      if (hit.google_books_id) patch.google_books_id = hit.google_books_id;
+    }
+  } catch (_) {}
+  return patch;
+}
+async function enrichList(list, label) {
+  let done = 0, filled = 0;
+  for (const b of list) {
+    const patch = await enrichOne(b);
+    patch.enriched = true;
+    if (patch.cover_url) filled++;
     try {
       const saved = await updateBook(b.id, patch);
       const i = state.books.findIndex((x) => x.id === b.id);
       if (i > -1) state.books[i] = saved;
     } catch (_) {}
-    if (++done % 6 === 0) renderMain();          // Regal nach und nach auffrischen
-    await new Promise((r) => setTimeout(r, 160)); // sanft zu den APIs
+    if (++done % 4 === 0) { renderMain(); if (label) toast(`${label} ${done}/${list.length} …`); }
+    await new Promise((r) => setTimeout(r, 140));
   }
   renderMain();
+  return filled;
+}
+// Läuft automatisch beim Laden: alle noch nicht angereicherten Import-Bücher
+async function autoEnrich() {
+  if (DEMO) return;
+  const todo = state.books.filter((b) => !b.enriched && b.source === "import");
+  if (todo.length) await enrichList(todo, "Vervollständige");
+}
+// Manuell: gezielt Bücher ohne Cover erneut versuchen
+async function enrichMissingCovers() {
+  if (DEMO) return toast("Nur mit echten Büchern");
+  const todo = state.books.filter((b) => !b.cover_url && b.source !== "demo");
+  if (!todo.length) return toast("Alle Bücher haben schon ein Cover 👍");
+  toast(`Lade Infos für ${todo.length} Bücher …`);
+  const filled = await enrichList(todo, "Cover");
+  toast(filled ? `${filled} Cover ergänzt ✨` : "Keine weiteren Cover gefunden");
 }
 
 // ================================================================
