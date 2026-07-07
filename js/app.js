@@ -276,7 +276,52 @@ async function loadBooks() {
   try {
     state.books = await fetchBooks();
     renderMain();
+    autoEnrich();
   } catch (e) { toast("Konnte Bücher nicht laden"); console.error(e); }
+}
+
+// Importierte Bücher im Hintergrund über Google Books vervollständigen
+// (Cover, ISBN, Seiten, Jahr, Verlag, Klappentext, Web-Bewertung). Läuft nur einmal pro Buch.
+function titleWords(s) {
+  return new Set(String(s || "").toLowerCase().split(/[:–\-]/)[0]
+    .replace(/[^a-z0-9äöüß ]/g, " ").split(/\s+/).filter((w) => w.length > 3));
+}
+async function autoEnrich() {
+  if (DEMO) return;
+  const todo = state.books.filter((b) => !b.enriched && b.source === "import");
+  if (!todo.length) return;
+  let done = 0;
+  for (const b of todo) {
+    const patch = { enriched: true };
+    try {
+      const q = [b.title, (b.author || "").split(",")[0]].filter(Boolean).join(" ");
+      const hit = (await searchBooks(q))[0];
+      if (hit) {
+        // Nur übernehmen, wenn der Titel plausibel passt (kein falsches Cover)
+        const qw = titleWords(b.title), hw = titleWords(hit.title);
+        const overlap = qw.size ? [...qw].filter((w) => hw.has(w)).length / qw.size : 0;
+        if (overlap >= 0.4) {
+          if (hit.cover_url) patch.cover_url = hit.cover_url;
+          if (hit.isbn13) patch.isbn13 = hit.isbn13;
+          if (hit.isbn10) patch.isbn10 = hit.isbn10;
+          if (hit.page_count) patch.page_count = hit.page_count;
+          if (hit.published_year) patch.published_year = hit.published_year;
+          if (hit.publisher) patch.publisher = hit.publisher;
+          if (hit.description) patch.description = hit.description;
+          if (hit.web_rating != null) { patch.web_rating = hit.web_rating; patch.web_rating_count = hit.web_rating_count; }
+          if (hit.google_books_id) patch.google_books_id = hit.google_books_id;
+        }
+      }
+    } catch (_) {}
+    try {
+      const saved = await updateBook(b.id, patch);
+      const i = state.books.findIndex((x) => x.id === b.id);
+      if (i > -1) state.books[i] = saved;
+    } catch (_) {}
+    if (++done % 6 === 0) renderMain();          // Regal nach und nach auffrischen
+    await new Promise((r) => setTimeout(r, 160)); // sanft zu den APIs
+  }
+  renderMain();
 }
 
 // ================================================================
