@@ -42,10 +42,10 @@ const SORTS = [
 // Vorschau-Modus (index.html#demo): Design ohne Login/DB ansehen. In Produktion unsichtbar.
 const DEMO = location.hash.includes("demo");
 const DEMO_BOOKS = [
-  { id: "d1", title: "Soloalbum", author: "Benjamin von Stuckrad-Barre", page_count: 240, published_year: 1998, publisher: "Kiepenheuer & Witsch", status: "read", rating: 4, cover_url: null, isbn13: "9783462027004", isbn10: "3462027000", web_rating: 3.6, web_rating_count: 214, description: "Ein junger Musikjournalist stürzt nach dem Ende einer Beziehung in eine Krise: zwischen Plattenrezensionen, Popkultur und Liebeskummer erzählt Stuckrad-Barres Debüt vom Lebensgefühl einer Generation – rasant, komisch und voller Musik." },
-  { id: "d2", title: "Tschick", author: "Wolfgang Herrndorf", page_count: 248, published_year: 2010, publisher: "Rowohlt", status: "read", rating: 5, cover_url: "https://covers.openlibrary.org/b/id/8418261-L.jpg", isbn13: "9783871347108", web_rating: 4.4, web_rating_count: 1893, description: "Maik und der Russlanddeutsche Tschick brechen in einem geklauten Lada zu einer Reise durch die ostdeutsche Provinz auf – eine warmherzige, komische Coming-of-Age-Geschichte über Freundschaft und den Sommer des Lebens." },
+  { id: "d1", title: "Soloalbum", author: "Benjamin von Stuckrad-Barre", page_count: 240, published_year: 1998, publisher: "Kiepenheuer & Witsch", status: "read", rating: 4, date_finished: "2026-01-15", cover_url: null, isbn13: "9783462027004", isbn10: "3462027000", web_rating: 3.6, web_rating_count: 214, description: "Ein junger Musikjournalist stürzt nach dem Ende einer Beziehung in eine Krise: zwischen Plattenrezensionen, Popkultur und Liebeskummer erzählt Stuckrad-Barres Debüt vom Lebensgefühl einer Generation – rasant, komisch und voller Musik." },
+  { id: "d2", title: "Tschick", author: "Wolfgang Herrndorf", page_count: 248, published_year: 2010, publisher: "Rowohlt", status: "read", rating: 5, date_finished: "2026-03-10", cover_url: "https://covers.openlibrary.org/b/id/8418261-L.jpg", isbn13: "9783871347108", web_rating: 4.4, web_rating_count: 1893, description: "Maik und der Russlanddeutsche Tschick brechen in einem geklauten Lada zu einer Reise durch die ostdeutsche Provinz auf – eine warmherzige, komische Coming-of-Age-Geschichte über Freundschaft und den Sommer des Lebens." },
   { id: "d3", title: "Die Vermessung der Welt", author: "Daniel Kehlmann", page_count: 272, published_year: 2005, publisher: "Rowohlt", status: "reading", rating: 0, cover_url: "https://covers.openlibrary.org/b/id/1165201-L.jpg" },
-  { id: "d4", title: "Der Steppenwolf", author: "Hermann Hesse", page_count: 224, published_year: 1927, publisher: "S. Fischer", status: "read", rating: 5, cover_url: "https://covers.openlibrary.org/b/id/3221083-L.jpg" },
+  { id: "d4", title: "Der Steppenwolf", author: "Hermann Hesse", page_count: 224, published_year: 1927, publisher: "S. Fischer", status: "read", rating: 5, date_finished: "2026-03-22", cover_url: "https://covers.openlibrary.org/b/id/3221083-L.jpg" },
   { id: "d5", title: "Nachts ist es leiser in Teheran", author: "Shida Bazyar", page_count: 288, published_year: 2016, status: "want", rating: 0, cover_url: null },
 ];
 
@@ -190,6 +190,8 @@ function renderMain() {
   if (state.view === "stats") return renderStats(main);
 
   const filters = [["all", "Alle"], ["read", "Gelesen"], ["reading", "Lese gerade"], ["want", "Will lesen"]];
+  const counts = { all: state.books.length, read: 0, reading: 0, want: 0 };
+  state.books.forEach((b) => { const s = b.status || "read"; if (counts[s] != null) counts[s]++; });
   const list = liveList();
 
   main.innerHTML = `
@@ -199,7 +201,7 @@ function renderMain() {
       <button class="icon-btn" id="layoutBtn" aria-label="Ansicht wechseln">${state.layout === "list" ? I.grid : I.list}</button>
     </div>
     <div class="seg">${filters.map(([k, l]) =>
-      `<button data-f="${k}" class="${state.filter === k ? "on" : ""}">${l}</button>`).join("")}</div>
+      `<button data-f="${k}" class="${state.filter === k ? "on" : ""}">${l}<span class="seg-count">${counts[k]}</span></button>`).join("")}</div>
     <div style="height:16px"></div>
     <div id="shelfWrap">${shelfHTML(list)}</div>`;
 
@@ -292,12 +294,59 @@ function emptyHTML() {
 // ================================================================
 //  Statistik
 // ================================================================
+const MONTH_LETTERS = ["J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D"];
+const MONTH_NAMES = ["Januar","Februar","März","April","Mai","Juni","Juli","August","September","Oktober","November","Dezember"];
+
+function yearSectionHTML(read) {
+  const curYear = new Date().getFullYear();
+  const yrs = read.map((b) => parseInt((b.date_finished || "").slice(0, 4))).filter((y) => y > 1900);
+  const minYear = yrs.length ? Math.min(...yrs) : curYear;
+  const yr = Math.min(curYear, Math.max(minYear, state.statsYear || curYear));
+
+  const inYear = read.filter((b) => (b.date_finished || "").slice(0, 4) === String(yr));
+  const months = Array(12).fill(0);
+  inYear.forEach((b) => { const m = parseInt(b.date_finished.slice(5, 7)) - 1; if (m >= 0 && m < 12) months[m]++; });
+  const maxM = Math.max(1, ...months);
+  const yrPages = inYear.reduce((s, b) => s + (b.page_count || 0), 0);
+  const yrRated = inYear.filter((b) => b.rating);
+  const yrAvg = yrRated.length ? (yrRated.reduce((s, b) => s + b.rating, 0) / yrRated.length).toFixed(1) : "–";
+  const best = months.indexOf(Math.max(...months));
+
+  return `
+    <div class="section-title">Lese-Jahr</div>
+    <div class="year-card">
+      <div class="year-head">
+        <button class="yr-nav" id="yPrev" ${yr <= minYear ? "disabled" : ""}>‹</button>
+        <div class="yr-title">${yr}</div>
+        <button class="yr-nav" id="yNext" ${yr >= curYear ? "disabled" : ""}>›</button>
+      </div>
+      <div class="year-summary">
+        <div><b>${inYear.length}</b><span>${inYear.length === 1 ? "Buch" : "Bücher"}</span></div>
+        <div><b>${yrPages.toLocaleString("de-DE")}</b><span>Seiten</span></div>
+        <div><b>${yrAvg}</b><span>Ø ★</span></div>
+      </div>
+      ${inYear.length ? `<svg class="year-svg" viewBox="0 0 240 96" preserveAspectRatio="xMidYMax meet" role="img" aria-label="Gelesene Bücher pro Monat">
+        ${months.map((c, i) => {
+          const bh = c ? Math.max(6, c / maxM * 58) : 3;
+          const cx = i * 20 + 10, y = 74 - bh;
+          return `<rect x="${(cx - 6).toFixed(1)}" y="${y.toFixed(1)}" width="12" height="${bh.toFixed(1)}" rx="2.5" fill="${c ? "var(--accent)" : "var(--line)"}"/>`
+            + (c ? `<text x="${cx}" y="${(y - 3).toFixed(1)}" class="ysvg-val" text-anchor="middle">${c}</text>` : "")
+            + `<text x="${cx}" y="92" class="ysvg-lab" text-anchor="middle">${MONTH_LETTERS[i]}</text>`;
+        }).join("")}
+      </svg>
+      <div class="year-note">Stärkster Monat: <b>${MONTH_NAMES[best]}</b> (${months[best]})</div>`
+      : `<div class="year-empty">In ${yr} noch keine gelesenen Bücher mit Datum erfasst.</div>`}
+    </div>`;
+}
+
 function renderStats(main) {
   const read = state.books.filter((b) => (b.status || "read") === "read");
   const pages = read.reduce((s, b) => s + (b.page_count || 0), 0);
   const rated = read.filter((b) => b.rating);
   const avg = rated.length ? (rated.reduce((s, b) => s + b.rating, 0) / rated.length).toFixed(1) : "–";
   const authors = new Set(read.map((b) => b.author).filter(Boolean));
+  const reading = state.books.filter((b) => b.status === "reading").length;
+  const want = state.books.filter((b) => b.status === "want").length;
   const top = [...read].filter((b) => b.rating >= 4).sort((a, b) => (b.rating - a.rating)).slice(0, 6);
 
   main.innerHTML = `
@@ -307,6 +356,10 @@ function renderStats(main) {
       <div class="stat-card"><div class="num">${authors.size}</div><div class="lab">verschiedene Autor:innen</div></div>
       <div class="stat-card"><div class="num">${avg}</div><div class="lab">Ø Bewertung</div></div>
     </div>
+    ${(reading || want) ? `<div class="mini-counts">${reading ? `<span>📖 ${reading} lese ich gerade</span>` : ""}${want ? `<span>🔖 ${want} auf der Will-lesen-Liste</span>` : ""}</div>` : ""}
+
+    ${yearSectionHTML(read)}
+
     ${top.length ? `<div class="section-title">Deine Favoriten</div>
       <div class="shelf">${top.map(bookCardHTML).join("")}</div>` : ""}
 
@@ -323,6 +376,9 @@ function renderStats(main) {
     <div style="height:24px"></div>
     <button class="btn ghost block" id="logoutBtn" style="color:var(--ink-soft)">Abmelden</button>`;
   bindCards();
+  const curYear = new Date().getFullYear();
+  if ($("#yPrev")) $("#yPrev").onclick = () => { state.statsYear = (state.statsYear || curYear) - 1; renderMain(); };
+  if ($("#yNext")) $("#yNext").onclick = () => { state.statsYear = (state.statsYear || curYear) + 1; renderMain(); };
   $("#expCsv").onclick = () => {
     if (!state.books.length) return toast("Noch keine Bücher zum Exportieren");
     download("leselog-buecher.csv", booksToCSV(state.books), "text/csv");
