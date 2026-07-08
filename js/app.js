@@ -68,16 +68,25 @@ function closeSheet() {
 }
 
 // ---------------- Cover ----------------
+function amazonCover(b) {
+  return b && b.isbn10 ? `https://images-na.ssl-images-amazon.com/images/P/${b.isbn10}.01._SCLZZZZZZZ_.jpg` : "";
+}
+// <img> mit Fallback-Kette: hinterlegtes Cover -> Amazon per ISBN -> Titel-Kachel.
+// onload prüft auf Amazons 1x1-Platzhalter (naturalWidth < 10) und entfernt ihn dann.
+function coverImg(b) {
+  const amz = amazonCover(b);
+  const src = b.cover_url || amz;
+  if (!src) return "";
+  return `<img src="${esc(src)}" alt="" loading="lazy" data-amz="${esc(amz)}"` +
+    ` onload="if(this.naturalWidth&amp;&amp;this.naturalWidth&lt;10)this.remove()"` +
+    ` onerror="var a=this.dataset.amz;if(a&amp;&amp;this.src.indexOf(a)===-1){this.src=a}else{this.remove()}">`;
+}
 function coverHTML(b, cls = "") {
   const status = b.status && b.status !== "read"
     ? `<span class="badge-status ${b.status}">${b.status === "reading" ? "Lese gerade" : "Will lesen"}</span>` : "";
-  // Fallback (Titel/Autor auf Buchrücken) liegt immer darunter; das Bild deckt es ab,
-  // solange es lädt. Schlägt es fehl, wird das <img> entfernt und der Fallback erscheint.
+  // Fallback (Titel/Autor auf Buchrücken) liegt immer darunter; das Bild deckt es ab.
   const fallback = `<div class="cover-fallback"><div class="ft">${esc(b.title)}</div><div class="fa">${esc(b.author || "")}</div></div>`;
-  const img = b.cover_url
-    ? `<img src="${esc(b.cover_url)}" alt="" loading="lazy" onerror="this.remove()">`
-    : "";
-  return `<div class="cover-wrap ${cls}">${status}${fallback}${img}</div>`;
+  return `<div class="cover-wrap ${cls}">${status}${fallback}${coverImg(b)}</div>`;
 }
 function stars(n) { return n ? "★".repeat(n) + "☆".repeat(5 - n) : ""; }
 function escPlain(s) { return esc(String(s || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim()); }
@@ -205,8 +214,7 @@ function shelfHTML(list) {
   return `<div class="shelf">${list.map(bookCardHTML).join("")}</div>`;
 }
 function rowHTML(b) {
-  const cov = b.cover_url
-    ? `<img src="${esc(b.cover_url)}" alt="" loading="lazy" onerror="this.remove()">` : "";
+  const cov = coverImg(b);
   const st = b.status && b.status !== "read"
     ? `<span class="row-status ${b.status}">${b.status === "reading" ? "Lese gerade" : "Will lesen"}</span>` : "";
   return `<div class="row-book" data-id="${b.id}">
