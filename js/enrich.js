@@ -1,4 +1,5 @@
 // Buch-Metadaten aus dem Netz holen: Google Books (primär) + OpenLibrary (Cover-Fallback)
+import { CONFIG } from "./config.js";
 
 function httpsCover(url) {
   if (!url) return null;
@@ -88,7 +89,8 @@ function score(b) {
 }
 
 async function gbooks(params) {
-  const url = "https://www.googleapis.com/books/v1/volumes?" + params + "&maxResults=8";
+  const key = CONFIG.GBOOKS_KEY ? "&key=" + CONFIG.GBOOKS_KEY : "";
+  const url = "https://www.googleapis.com/books/v1/volumes?" + params + "&maxResults=8&country=DE" + key;
   const res = await fetch(url);
   if (!res.ok) throw new Error("Google Books nicht erreichbar");
   const json = await res.json();

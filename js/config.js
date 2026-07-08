@@ -4,6 +4,9 @@ export const CONFIG = {
   SUPABASE_URL: "https://wejvvldovywrernuujgt.supabase.co",
   SUPABASE_KEY: "sb_publishable_ZyFVdlb-Kxuvo6T5SJ43cw_I5l6LBTz",
 
+  // Google Books API-Key (nur Books API freigeschaltet) – eigenes Kontingent, keine 429 mehr.
+  GBOOKS_KEY: "AIzaSyC6NrAnOw5HqnbyUt6_IA7VyHl623FHUQU",
+
   // Cloudflare Worker für die gute KI-Transkription (ElevenLabs Scribe).
   // Solange leer: das iPhone transkribiert selbst (Offline-Notnagel).
   TRANSCRIBE_URL: "",
