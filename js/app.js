@@ -22,11 +22,22 @@ const I = {
   info: '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>',
   list: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>',
   grid: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>',
+  sort: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h12"/><path d="M3 12h9"/><path d="M3 18h6"/><path d="M17 8V19"/><path d="M14 16l3 3 3-3"/></svg>',
 };
 
 // ---------------- State ----------------
 const state = { session: null, books: [], filter: "all", search: "", view: "shelf",
-  layout: localStorage.getItem("leselog_layout") || "grid" };
+  layout: localStorage.getItem("leselog_layout") || "grid",
+  sort: localStorage.getItem("leselog_sort") || "added" };
+
+const SORTS = [
+  ["added", "Zuletzt hinzugefügt"],
+  ["read", "Zuletzt gelesen"],
+  ["title", "Titel (A–Z)"],
+  ["author", "Autor (A–Z)"],
+  ["rating", "Beste Bewertung"],
+  ["pages", "Seitenzahl"],
+];
 
 // Vorschau-Modus (index.html#demo): Design ohne Login/DB ansehen. In Produktion unsichtbar.
 const DEMO = location.hash.includes("demo");
@@ -179,16 +190,12 @@ function renderMain() {
   if (state.view === "stats") return renderStats(main);
 
   const filters = [["all", "Alle"], ["read", "Gelesen"], ["reading", "Lese gerade"], ["want", "Will lesen"]];
-  let list = state.books.slice();
-  if (state.filter !== "all") list = list.filter((b) => (b.status || "read") === state.filter);
-  if (state.search) {
-    const q = state.search.toLowerCase();
-    list = list.filter((b) => (b.title + " " + (b.author || "")).toLowerCase().includes(q));
-  }
+  const list = liveList();
 
   main.innerHTML = `
     <div class="toolbar">
       <div class="search">${I.search}<input id="searchInp" placeholder="Titel oder Autor suchen…" value="${esc(state.search)}"></div>
+      <button class="icon-btn" id="sortBtn" aria-label="Sortieren">${I.sort}</button>
       <button class="icon-btn" id="layoutBtn" aria-label="Ansicht wechseln">${state.layout === "list" ? I.grid : I.list}</button>
     </div>
     <div class="seg">${filters.map(([k, l]) =>
@@ -198,6 +205,7 @@ function renderMain() {
 
   const si = $("#searchInp");
   si.oninput = () => { state.search = si.value; $("#shelfWrap").innerHTML = shelfHTML(liveList()); bindCards(); };
+  $("#sortBtn").onclick = openSortSheet;
   $("#layoutBtn").onclick = () => {
     state.layout = state.layout === "grid" ? "list" : "grid";
     localStorage.setItem("leselog_layout", state.layout);
@@ -233,7 +241,34 @@ function liveList() {
   if (state.filter !== "all") list = list.filter((b) => (b.status || "read") === state.filter);
   if (state.search) { const q = state.search.toLowerCase();
     list = list.filter((b) => (b.title + " " + (b.author || "")).toLowerCase().includes(q)); }
-  return list;
+  return sortBooks(list);
+}
+
+function sortBooks(list) {
+  const l = list.slice();
+  const num = (x) => (x == null ? -Infinity : x);
+  const readKey = (b) => b.date_finished || b.date_started || b.created_at || "";
+  switch (state.sort) {
+    case "read":   l.sort((a, b) => readKey(b).localeCompare(readKey(a))); break;
+    case "title":  l.sort((a, b) => (a.title || "￿").localeCompare(b.title || "￿", "de", { sensitivity: "base" })); break;
+    case "author": l.sort((a, b) => (a.author || "￿").localeCompare(b.author || "￿", "de", { sensitivity: "base" })); break;
+    case "rating": l.sort((a, b) => num(b.rating) - num(a.rating)); break;
+    case "pages":  l.sort((a, b) => num(b.page_count) - num(a.page_count)); break;
+    // "added": Reihenfolge von state.books (created_at absteigend) beibehalten
+  }
+  return l;
+}
+
+function openSortSheet() {
+  openSheet(`<h2>Sortieren</h2>
+    <p class="sub">Wonach soll dein Regal geordnet sein?</p>
+    <div class="sort-list">${SORTS.map(([k, l]) =>
+      `<button class="sort-opt ${state.sort === k ? "on" : ""}" data-s="${k}"><span>${l}</span>${state.sort === k ? '<span class="sort-check">✓</span>' : ""}</button>`).join("")}</div>`);
+  document.querySelectorAll(".sort-opt").forEach((b) => b.onclick = () => {
+    state.sort = b.dataset.s;
+    localStorage.setItem("leselog_sort", state.sort);
+    closeSheet(); renderMain();
+  });
 }
 function bindCards() {
   document.querySelectorAll(".book, .row-book").forEach((c) =>

@@ -321,6 +321,14 @@ textarea.input { resize: vertical; min-height: 70px; line-height: 1.5; }
 }
 .status-pick button.on { background: var(--accent); color: #fff; border-color: transparent; }
 
+.sort-list { display: flex; flex-direction: column; gap: 0; margin-top: 6px; }
+.sort-opt { display: flex; align-items: center; justify-content: space-between; width: 100%;
+  padding: 15px 4px; font-size: 16px; color: var(--ink); text-align: left;
+  border-bottom: 1px solid var(--line-soft); }
+.sort-opt:active { opacity: 0.55; }
+.sort-opt.on { color: var(--accent); font-weight: 600; }
+.sort-check { color: var(--accent); font-weight: 700; font-size: 17px; }
+
 .sheet-actions { display: flex; gap: 10px; margin-top: 22px; padding-top: 4px; }
 .sheet-actions .btn { flex: 1; padding: 14px; }
 
