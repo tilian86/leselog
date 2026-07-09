@@ -606,15 +606,14 @@ async function onMic() {
 }
 function resetMic() {
   const btn = $("#micBtn");
-  if (btn) { btn.classList.remove("recording"); btn.querySelector("span").textContent = "Buch einsprechen"; }
+  const one = { book: "Buch", movie: "Film", series: "Serie" }[state.mediaType];
+  if (btn) { btn.classList.remove("recording"); btn.querySelector("span").textContent = one + " einsprechen"; }
   clearInterval(recTimerInt);
 }
 
 // ================================================================
 //  Suche & Kandidaten
 // ================================================================
-const STATUS_LABEL = { read: "Gelesen", reading: "Lese gerade", want: "Will lesen" };
-
 async function runSearch(parsed) {
   const query = (parsed.query || "").trim();
   const rawInput = parsed.rawInput || null;
@@ -687,7 +686,7 @@ function showCandidates(results, parsed) {
       openReview(b);
     });
   $("#noneBtn").onclick = () => {
-    openReview({ title: parsed.query || rawInput || "", raw_input: rawInput, status, source });
+    openReview({ title: parsed.query || rawInput || "", raw_input: rawInput, status, source, media_type: state.mediaType });
   };
 }
 
@@ -976,7 +975,7 @@ async function runImport(file) {
   const preview = fresh.slice(0, 5).map((b) =>
     `<div class="cand"><div class="mini" style="width:34px;height:50px"></div>
       <div class="c-main"><div class="c-title">${esc(b.title)}</div>
-      <div class="c-meta">${esc(b.author || "Unbekannt")}${b.status !== "read" ? " · " + STATUS_LABEL[b.status] : ""}</div></div></div>`).join("");
+      <div class="c-meta">${esc(b.author || "Unbekannt")}${b.status !== "read" ? " · " + statusLabel(b.status, b.media_type) : ""}</div></div></div>`).join("");
 
   openSheet(`
     <h2>${fresh.length} ${fresh.length === 1 ? "Buch" : "Bücher"} gefunden</h2>
