@@ -95,6 +95,16 @@ a { color: var(--accent); }
 }
 .icon-btn:active { transform: scale(0.94); }
 
+/* Medien-Reiter (Bücher / Filme / Serien) */
+.brand-row { margin-bottom: 10px; }
+.media-tabs { display: flex; gap: 5px; background: var(--paper-2); border: 1px solid var(--line);
+  border-radius: 12px; padding: 4px; width: 100%; }
+.media-tabs button { flex: 1; padding: 8px 4px; border-radius: 9px; font-size: 13.5px; font-weight: 600;
+  color: var(--ink-soft); display: flex; align-items: center; justify-content: center; gap: 6px; white-space: nowrap; }
+.media-tabs button.on { background: var(--accent); color: #fff; box-shadow: var(--shadow-sm); }
+.media-tabs .mt-ic { font-size: 15px; }
+.progress-hint { font-size: 12.5px; color: var(--ink-soft); margin: -4px 0 6px 2px; }
+
 /* ---------------- Search / filter ---------------- */
 .toolbar { display: flex; gap: 10px; margin: 4px 0 18px; }
 .search {

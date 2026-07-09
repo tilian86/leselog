@@ -7,6 +7,7 @@ import { startDictation, hasMic } from "./audio.js";
 import { startScanner } from "./scan.js";
 import { readEpubMeta } from "./epub.js";
 import { booksToCSV, booksToJSON, download, parseImportFile } from "./io.js";
+import { searchMedia, getMediaDetails, tmdbUrl } from "./tmdb.js";
 
 // ---------------- Icons ----------------
 const I = {
@@ -28,7 +29,17 @@ const I = {
 // ---------------- State ----------------
 const state = { session: null, books: [], filter: "all", search: "", view: "shelf",
   layout: localStorage.getItem("leselog_layout") || "grid",
-  sort: localStorage.getItem("leselog_sort") || "added" };
+  sort: localStorage.getItem("leselog_sort") || "added",
+  mediaType: localStorage.getItem("leselog_media") || "book" };
+
+const MEDIA = [["book", "📚", "Bücher"], ["movie", "🎬", "Filme"], ["series", "📺", "Serien"]];
+const isMediaType = (mt) => mt === "movie" || mt === "series";
+function typeName(mt) { return (MEDIA.find((m) => m[0] === (mt || state.mediaType)) || MEDIA[0])[2]; }
+function statusLabel(status, mt) {
+  const book = { read: "Gelesen", reading: "Lese gerade", want: "Will lesen" };
+  const media = { read: "Gesehen", reading: "Schaue gerade", want: "Will sehen" };
+  return (isMediaType(mt || state.mediaType) ? media : book)[status] || status;
+}
 
 const SORTS = [
   ["added", "Zuletzt hinzugefügt"],
@@ -47,6 +58,8 @@ const DEMO_BOOKS = [
   { id: "d3", title: "Die Vermessung der Welt", author: "Daniel Kehlmann", page_count: 272, published_year: 2005, publisher: "Rowohlt", status: "reading", rating: 0, cover_url: "https://covers.openlibrary.org/b/id/1165201-L.jpg" },
   { id: "d4", title: "Der Steppenwolf", author: "Hermann Hesse", page_count: 224, published_year: 1927, publisher: "S. Fischer", status: "read", rating: 5, date_finished: "2026-03-22", cover_url: "https://covers.openlibrary.org/b/id/3221083-L.jpg" },
   { id: "d5", title: "Nachts ist es leiser in Teheran", author: "Shida Bazyar", page_count: 288, published_year: 2016, status: "want", rating: 0, cover_url: null },
+  { id: "m1", media_type: "movie", title: "Matrix", author: "Lana & Lilly Wachowski", published_year: 1999, runtime: 136, status: "read", rating: 5, date_finished: "2026-02-10", web_rating: 4.1, web_rating_count: 24000, tmdb_id: 603, cover_url: "https://image.tmdb.org/t/p/w500/iVmDLujHcV1zaMnaahKWn4TcCS6.jpg", description: "Der Hacker Neo entdeckt, dass die Wirklichkeit eine Computersimulation ist, und schließt sich dem Widerstand gegen die Maschinen an." },
+  { id: "s1", media_type: "series", title: "Dark", author: "Baran bo Odar, Jantje Friese", published_year: 2017, total_seasons: 3, total_episodes: 26, season: 2, episode: 5, status: "reading", rating: 5, web_rating: 4.3, web_rating_count: 5200, tmdb_id: 70523, cover_url: "https://image.tmdb.org/t/p/w500/7yQyDCqSazrYTnmxdQLAZ8YDH87.jpg", description: "In der Kleinstadt Winden verschwinden Kinder – eine Zeitreise-Mystery über vier Familien und die Abgründe der Zeit." },
 ];
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -94,7 +107,7 @@ function coverImg(b) {
 }
 function coverHTML(b, cls = "") {
   const status = b.status && b.status !== "read"
-    ? `<span class="badge-status ${b.status}">${b.status === "reading" ? "Lese gerade" : "Will lesen"}</span>` : "";
+    ? `<span class="badge-status ${b.status}">${statusLabel(b.status, b.media_type)}</span>` : "";
   // Fallback (Titel/Autor auf Buchrücken) liegt immer darunter; das Bild deckt es ab.
   const fallback = `<div class="cover-fallback"><div class="ft">${esc(b.title)}</div><div class="fa">${esc(b.author || "")}</div></div>`;
   return `<div class="cover-wrap ${cls}">${status}${fallback}${coverImg(b)}</div>`;
@@ -103,9 +116,10 @@ function stars(n) { return n ? "★".repeat(n) + "☆".repeat(5 - n) : ""; }
 function escPlain(s) { return esc(String(s || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim()); }
 function webRatingHTML(b) {
   if (!b.web_rating) return "";
+  const src = isMediaType(b.media_type) ? "· TMDb" : "· Google Books";
   return `<span class="wr-star">★</span> ${(+b.web_rating).toFixed(1)}` +
     (b.web_rating_count ? ` <span class="wr-count">(${(+b.web_rating_count).toLocaleString("de-DE")})</span>` : "") +
-    ` <span class="wr-src">· Google Books</span>`;
+    ` <span class="wr-src">${src}</span>`;
 }
 function storeLinksHTML(b) {
   return storeLinks(b).map((s) =>
@@ -113,7 +127,8 @@ function storeLinksHTML(b) {
 }
 function klappentextHTML(b) {
   if (!b.description) return "";
-  return `<div class="klappentext"><div class="kt-label">Klappentext</div>
+  const label = isMediaType(b.media_type) ? "Handlung" : "Klappentext";
+  return `<div class="klappentext"><div class="kt-label">${label}</div>
     <p class="kt-text clamp">${escPlain(b.description)}</p></div>`;
 }
 
@@ -162,10 +177,15 @@ async function renderScreen() {
 
   document.body.style.paddingBottom = "";
   screen.innerHTML = `
-    <div class="topbar"><div class="app">
-      <div class="brand"><span class="mark">${I.book}</span><h1>Leselog</h1></div>
-      <span class="count-pill" id="countPill"></span>
-    </div></div>
+    <div class="topbar">
+      <div class="app brand-row">
+        <div class="brand"><span class="mark">${I.book}</span><h1>Leselog</h1></div>
+        <span class="count-pill" id="countPill"></span>
+      </div>
+      <div class="app"><div class="media-tabs" id="mediaTabs">
+        ${MEDIA.map(([m, ic, l]) => `<button data-m="${m}" class="${state.mediaType === m ? "on" : ""}"><span class="mt-ic">${ic}</span>${l}</button>`).join("")}
+      </div></div>
+    </div>
     <main class="app" id="main"></main>
     <div class="dock">
       <button class="tab" data-view="shelf">${I.shelf}<span>Regal</span></button>
@@ -176,22 +196,31 @@ async function renderScreen() {
   screen.querySelectorAll(".dock .tab").forEach((t) => {
     t.onclick = () => { state.view = t.dataset.view; renderMain(); };
   });
+  screen.querySelectorAll("#mediaTabs button").forEach((t) => {
+    t.onclick = () => {
+      state.mediaType = t.dataset.m;
+      localStorage.setItem("leselog_media", state.mediaType);
+      state.filter = "all"; state.search = "";
+      document.querySelectorAll("#mediaTabs button").forEach((x) => x.classList.toggle("on", x === t));
+      renderMain();
+    };
+  });
   await loadBooks();
 }
 
 function renderMain() {
   const main = $("#main");
   if (!main) return;
-  $("#countPill").textContent =
-    state.books.length + (state.books.length === 1 ? " Buch" : " Bücher");
+  const mediaBooks = state.books.filter((b) => (b.media_type || "book") === state.mediaType);
+  $("#countPill").textContent = mediaBooks.length + " " + typeName();
   document.querySelectorAll(".dock .tab").forEach((t) =>
     t.classList.toggle("on", t.dataset.view === state.view));
 
   if (state.view === "stats") return renderStats(main);
 
-  const filters = [["all", "Alle"], ["read", "Gelesen"], ["reading", "Lese gerade"], ["want", "Will lesen"]];
-  const counts = { all: state.books.length, read: 0, reading: 0, want: 0 };
-  state.books.forEach((b) => { const s = b.status || "read"; if (counts[s] != null) counts[s]++; });
+  const filters = [["all", "Alle"], ["read", statusLabel("read")], ["reading", statusLabel("reading")], ["want", statusLabel("want")]];
+  const counts = { all: mediaBooks.length, read: 0, reading: 0, want: 0 };
+  mediaBooks.forEach((b) => { const s = b.status || "read"; if (counts[s] != null) counts[s]++; });
   const list = liveList();
 
   main.innerHTML = `
@@ -226,7 +255,7 @@ function shelfHTML(list) {
 function rowHTML(b) {
   const cov = coverImg(b);
   const st = b.status && b.status !== "read"
-    ? `<span class="row-status ${b.status}">${b.status === "reading" ? "Lese gerade" : "Will lesen"}</span>` : "";
+    ? `<span class="row-status ${b.status}">${statusLabel(b.status, b.media_type)}</span>` : "";
   return `<div class="row-book" data-id="${b.id}">
     <div class="cover-wrap thumb"><div class="cover-fallback"><div class="ft">${esc(b.title)}</div></div>${cov}</div>
     <div class="row-main">
@@ -239,7 +268,7 @@ function rowHTML(b) {
 }
 
 function liveList() {
-  let list = state.books.slice();
+  let list = state.books.filter((b) => (b.media_type || "book") === state.mediaType);
   if (state.filter !== "all") list = list.filter((b) => (b.status || "read") === state.filter);
   if (state.search) { const q = state.search.toLowerCase();
     list = list.filter((b) => (b.title + " " + (b.author || "")).toLowerCase().includes(q)); }
@@ -285,9 +314,11 @@ function bookCardHTML(b) {
   </div>`;
 }
 function emptyHTML() {
+  const ex = { book: "„Soloalbum von Stuckrad-Barre“", movie: "„Matrix“", series: "„Dark“" }[state.mediaType];
+  const what = { book: "ein Buch", movie: "einen Film", series: "eine Serie" }[state.mediaType];
   return `<div class="empty">${I.book}
-    <h2>Dein Regal ist noch leer</h2>
-    <p>Tippe auf <b>+</b> und sprich einfach ein Buch ein – „Soloalbum von Stuckrad-Barre“ – den Rest suche ich für dich.</p>
+    <h2>Noch keine ${typeName()}</h2>
+    <p>Tippe auf <b>+</b> und sprich einfach ${what} ein – ${ex} – den Rest suche ich für dich.</p>
   </div>`;
 }
 
@@ -298,6 +329,7 @@ const MONTH_LETTERS = ["J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D
 const MONTH_NAMES = ["Januar","Februar","März","April","Mai","Juni","Juli","August","September","Oktober","November","Dezember"];
 
 function yearSectionHTML(read) {
+  const mt = state.mediaType, media = isMediaType(mt);
   const curYear = new Date().getFullYear();
   const yrs = read.map((b) => parseInt((b.date_finished || "").slice(0, 4))).filter((y) => y > 1900);
   const minYear = yrs.length ? Math.min(...yrs) : curYear;
@@ -307,13 +339,19 @@ function yearSectionHTML(read) {
   const months = Array(12).fill(0);
   inYear.forEach((b) => { const m = parseInt(b.date_finished.slice(5, 7)) - 1; if (m >= 0 && m < 12) months[m]++; });
   const maxM = Math.max(1, ...months);
-  const yrPages = inYear.reduce((s, b) => s + (b.page_count || 0), 0);
+  const yrMid = mt === "movie" ? Math.round(inYear.reduce((s, b) => s + (b.runtime || 0), 0) / 60)
+    : mt === "series" ? inYear.reduce((s, b) => s + (b.total_episodes || 0), 0)
+    : inYear.reduce((s, b) => s + (b.page_count || 0), 0);
+  const yrMidLabel = mt === "movie" ? "Stunden" : mt === "series" ? "Folgen" : "Seiten";
   const yrRated = inYear.filter((b) => b.rating);
   const yrAvg = yrRated.length ? (yrRated.reduce((s, b) => s + b.rating, 0) / yrRated.length).toFixed(1) : "–";
   const best = months.indexOf(Math.max(...months));
+  const one = { book: "Buch", movie: "Film", series: "Serie" }[mt];
+  const title = mt === "movie" ? "Film-Jahr" : mt === "series" ? "Serien-Jahr" : "Lese-Jahr";
+  const seen = media ? "gesehene" : "gelesene";
 
   return `
-    <div class="section-title">Lese-Jahr</div>
+    <div class="section-title">${title}</div>
     <div class="year-card">
       <div class="year-head">
         <button class="yr-nav" id="yPrev" ${yr <= minYear ? "disabled" : ""}>‹</button>
@@ -321,11 +359,11 @@ function yearSectionHTML(read) {
         <button class="yr-nav" id="yNext" ${yr >= curYear ? "disabled" : ""}>›</button>
       </div>
       <div class="year-summary">
-        <div><b>${inYear.length}</b><span>${inYear.length === 1 ? "Buch" : "Bücher"}</span></div>
-        <div><b>${yrPages.toLocaleString("de-DE")}</b><span>Seiten</span></div>
+        <div><b>${inYear.length}</b><span>${inYear.length === 1 ? one : typeName()}</span></div>
+        <div><b>${yrMid.toLocaleString("de-DE")}</b><span>${yrMidLabel}</span></div>
         <div><b>${yrAvg}</b><span>Ø ★</span></div>
       </div>
-      ${inYear.length ? `<svg class="year-svg" viewBox="0 0 240 96" preserveAspectRatio="xMidYMax meet" role="img" aria-label="Gelesene Bücher pro Monat">
+      ${inYear.length ? `<svg class="year-svg" viewBox="0 0 240 96" preserveAspectRatio="xMidYMax meet" role="img" aria-label="${seen} ${typeName()} pro Monat">
         ${months.map((c, i) => {
           const bh = c ? Math.max(6, c / maxM * 58) : 3;
           const cx = i * 20 + 10, y = 74 - bh;
@@ -335,28 +373,36 @@ function yearSectionHTML(read) {
         }).join("")}
       </svg>
       <div class="year-note">Stärkster Monat: <b>${MONTH_NAMES[best]}</b> (${months[best]})</div>`
-      : `<div class="year-empty">In ${yr} noch keine gelesenen Bücher mit Datum erfasst.</div>`}
+      : `<div class="year-empty">In ${yr} noch keine ${seen} ${typeName()} mit Datum erfasst.</div>`}
     </div>`;
 }
 
 function renderStats(main) {
-  const read = state.books.filter((b) => (b.status || "read") === "read");
-  const pages = read.reduce((s, b) => s + (b.page_count || 0), 0);
+  const mt = state.mediaType, media = isMediaType(mt);
+  const all = state.books.filter((b) => (b.media_type || "book") === mt);
+  const read = all.filter((b) => (b.status || "read") === "read");
   const rated = read.filter((b) => b.rating);
   const avg = rated.length ? (rated.reduce((s, b) => s + b.rating, 0) / rated.length).toFixed(1) : "–";
-  const authors = new Set(read.map((b) => b.author).filter(Boolean));
-  const reading = state.books.filter((b) => b.status === "reading").length;
-  const want = state.books.filter((b) => b.status === "want").length;
+  const people = new Set(read.map((b) => b.author).filter(Boolean));
+  const reading = all.filter((b) => b.status === "reading").length;
+  const want = all.filter((b) => b.status === "want").length;
   const top = [...read].filter((b) => b.rating >= 4).sort((a, b) => (b.rating - a.rating)).slice(0, 6);
+
+  const midVal = mt === "movie" ? Math.round(read.reduce((s, b) => s + (b.runtime || 0), 0) / 60)
+    : mt === "series" ? read.reduce((s, b) => s + (b.total_episodes || 0), 0)
+    : read.reduce((s, b) => s + (b.page_count || 0), 0);
+  const midLab = mt === "movie" ? "Stunden gesamt" : mt === "series" ? "Folgen gesamt" : "Seiten gesamt";
+  const peopleLab = mt === "movie" ? "Regisseur:innen" : mt === "series" ? "Macher:innen" : "Autor:innen";
+  const countLab = (media ? "gesehene " : "gelesene ") + typeName();
 
   main.innerHTML = `
     <div class="stats-grid">
-      <div class="stat-card"><div class="num">${read.length}</div><div class="lab">gelesene Bücher</div></div>
-      <div class="stat-card"><div class="num">${pages.toLocaleString("de-DE")}</div><div class="lab">Seiten gesamt</div></div>
-      <div class="stat-card"><div class="num">${authors.size}</div><div class="lab">verschiedene Autor:innen</div></div>
+      <div class="stat-card"><div class="num">${read.length}</div><div class="lab">${countLab}</div></div>
+      <div class="stat-card"><div class="num">${midVal.toLocaleString("de-DE")}</div><div class="lab">${midLab}</div></div>
+      <div class="stat-card"><div class="num">${people.size}</div><div class="lab">verschiedene ${peopleLab}</div></div>
       <div class="stat-card"><div class="num">${avg}</div><div class="lab">Ø Bewertung</div></div>
     </div>
-    ${(reading || want) ? `<div class="mini-counts">${reading ? `<span>📖 ${reading} lese ich gerade</span>` : ""}${want ? `<span>🔖 ${want} auf der Will-lesen-Liste</span>` : ""}</div>` : ""}
+    ${(reading || want) ? `<div class="mini-counts">${reading ? `<span>📖 ${reading} ${media ? "schaue ich gerade" : "lese ich gerade"}</span>` : ""}${want ? `<span>🔖 ${want} auf der ${media ? "Will-sehen" : "Will-lesen"}-Liste</span>` : ""}</div>` : ""}
 
     ${yearSectionHTML(read)}
 
@@ -469,13 +515,13 @@ async function enrichList(list, label) {
 // Läuft automatisch beim Laden: alle noch nicht angereicherten Import-Bücher
 async function autoEnrich() {
   if (DEMO) return;
-  const todo = state.books.filter((b) => !b.enriched && b.source === "import");
+  const todo = state.books.filter((b) => !b.enriched && b.source === "import" && (b.media_type || "book") === "book");
   if (todo.length) await enrichList(todo, "Vervollständige");
 }
 // Manuell: gezielt Bücher ohne Cover erneut versuchen
 async function enrichMissingCovers() {
   if (DEMO) return toast("Nur mit echten Büchern");
-  const todo = state.books.filter((b) => !b.cover_url && b.source !== "demo");
+  const todo = state.books.filter((b) => !b.cover_url && (b.media_type || "book") === "book");
   if (!todo.length) return toast("Alle Bücher haben schon ein Cover 👍");
   toast(`Lade Infos für ${todo.length} Bücher …`);
   const filled = await enrichList(todo, "Cover");
@@ -485,11 +531,15 @@ async function enrichMissingCovers() {
 // ================================================================
 //  Hinzufügen – Auswahl
 // ================================================================
+function runFor(parsed) { return isMediaType(state.mediaType) ? runMediaSearch(parsed) : runSearch(parsed); }
+
 function openAdd() {
-  const micLabel = CONFIG.TRANSCRIBE_URL ? "Buch einsprechen" : "Buch einsprechen";
+  const media = isMediaType(state.mediaType);
+  const one = { book: "Buch", movie: "Film", series: "Serie" }[state.mediaType];
+  const micLabel = media ? one + " einsprechen" : "Buch einsprechen";
   openSheet(`
-    <h2>Buch hinzufügen</h2>
-    <p class="sub">Sprich einfach los, tipp den Titel, scanne den Barcode oder lade eine EPUB.</p>
+    <h2>${one} hinzufügen</h2>
+    <p class="sub">${media ? "Sprich einfach los oder tipp den Titel." : "Sprich einfach los, tipp den Titel, scanne den Barcode oder lade eine EPUB."}</p>
     <button class="mic-btn" id="micBtn">${I.mic}<span>${micLabel}</span></button>
     <div class="rec-status" id="recStatus"></div>
     <div class="or-div">oder</div>
@@ -497,25 +547,27 @@ function openAdd() {
       <div class="search">${I.search}<input id="titleInp" placeholder="Titel eingeben…" enterkeyhint="search"></div>
       <button class="btn primary" id="titleGo">Suchen</button>
     </div>
-    <div class="secondary-row">
+    ${media ? "" : `<div class="secondary-row">
       <button class="btn" id="scanBtn">${I.scan} Barcode</button>
       <button class="btn" id="epubBtn">${I.epub} EPUB</button>
     </div>
-    <input type="file" id="epubFile" accept=".epub" class="hidden">
+    <input type="file" id="epubFile" accept=".epub" class="hidden">`}
   `);
   const doTyped = () => {
     const v = $("#titleInp").value.trim();
     if (!v) return;
     const parsed = parseUtterance(v);
     parsed.source = "manual";
-    runSearch(parsed);
+    runFor(parsed);
   };
   $("#micBtn").onclick = onMic;
   $("#titleGo").onclick = doTyped;
   $("#titleInp").addEventListener("keydown", (e) => { if (e.key === "Enter") doTyped(); });
-  $("#scanBtn").onclick = openScanner;
-  $("#epubBtn").onclick = () => $("#epubFile").click();
-  $("#epubFile").onchange = (e) => { if (e.target.files[0]) onEpub(e.target.files[0]); };
+  if (!media) {
+    $("#scanBtn").onclick = openScanner;
+    $("#epubBtn").onclick = () => $("#epubFile").click();
+    $("#epubFile").onchange = (e) => { if (e.target.files[0]) onEpub(e.target.files[0]); };
+  }
 }
 
 // ---------------- Mikrofon ----------------
@@ -534,7 +586,7 @@ async function onMic() {
       if (!text) { status.textContent = "Nichts verstanden – bitte nochmal."; resetMic(); return; }
       const parsed = parseUtterance(text);
       parsed.source = "voice";
-      runSearch(parsed);
+      runFor(parsed);
     } catch (e) { toast(e.message || "Transkription fehlgeschlagen"); activeDictation = null; resetMic(); }
     return;
   }
@@ -584,12 +636,35 @@ async function runSearch(parsed) {
   } catch (e) { toast(e.message || "Suche fehlgeschlagen"); console.error(e); }
 }
 
+async function runMediaSearch(parsed) {
+  const query = (parsed.query || "").trim();
+  const rawInput = parsed.rawInput || null;
+  const status = parsed.status || "read";
+  const source = parsed.source || (rawInput ? "voice" : "manual");
+  if (!query) return;
+  openSheet(`<h2>Ich suche …</h2><div class="center-load"><span class="spin dark"></span>
+    „${esc(query)}“ wird nachgeschlagen</div>`);
+  try {
+    const results = await searchMedia(query, state.mediaType);
+    if (!results.length) {
+      const base = { title: query, raw_input: rawInput, status, source, media_type: state.mediaType };
+      openSheet(`<h2>Nichts gefunden</h2>
+        <p class="sub">Zu „${esc(query)}“ habe ich nichts gefunden. Trag es von Hand ein:</p>
+        ${bookFormHTML(base, true)}`);
+      bindForm(base, true);
+      return;
+    }
+    showCandidates(results, { rawInput, status, source, query });
+  } catch (e) { toast(e.message || "Suche fehlgeschlagen"); console.error(e); }
+}
+
 function showCandidates(results, parsed) {
   const { rawInput, status = "read", source = "manual" } = parsed;
+  const heading = { book: "Welches Buch ist es?", movie: "Welcher Film ist es?", series: "Welche Serie ist es?" }[state.mediaType];
   const intentNote = status !== "read"
-    ? ` <span style="color:var(--accent);font-weight:600">→ ${STATUS_LABEL[status]}</span>` : "";
+    ? ` <span style="color:var(--accent);font-weight:600">→ ${statusLabel(status)}</span>` : "";
   openSheet(`
-    <h2>Welches Buch ist es?</h2>
+    <h2>${heading}</h2>
     <p class="sub">${rawInput ? "„" + esc(rawInput) + "“" : "Dein Treffer"}${intentNote} – tippe das richtige an.</p>
     <div id="cands">${results.map((b, i) => `
       <div class="cand" data-i="${i}">
@@ -618,57 +693,86 @@ function showCandidates(results, parsed) {
 // ================================================================
 //  Review / Formular (neu ODER bearbeiten)
 // ================================================================
-const STATUSES = [["read", "Gelesen"], ["reading", "Lese gerade"], ["want", "Will lesen"]];
+const STATUS_KEYS = ["read", "reading", "want"];
 
 function bookFormHTML(b, isNew) {
   b = b || {};
+  const mt = b.media_type || "book";
+  const media = isMediaType(mt);
   const missingWhen = (b.status || "read") === "read" && !b.date_finished;
+  const authorLabel = mt === "movie" ? "Regie" : mt === "series" ? "Macher:in" : "Autor:in";
+
+  const facts = mt === "series"
+    ? `${b.total_seasons ? b.total_seasons + " Staffeln" : ""}${b.total_episodes ? " · " + b.total_episodes + " Folgen" : ""}`
+    : mt === "movie"
+    ? `${b.runtime ? b.runtime + " Min." : ""}`
+    : `${b.page_count ? b.page_count + " Seiten<br>" : ""}${b.publisher ? esc(b.publisher) + "<br>" : ""}${b.isbn13 ? "ISBN " + esc(b.isbn13) : ""}`;
+
+  const links = media
+    ? (b.tmdb_id ? `<div class="store-links"><a href="${esc(tmdbUrl(b))}" target="_blank" rel="noopener">Auf TMDb ansehen ↗</a></div>` : "")
+    : (b.title ? `<div class="store-links" id="storeLinks">${storeLinksHTML(b)}</div>` : "");
+
+  const midFields = mt === "series"
+    ? `<div class="two-col">
+         <label class="fld"><span class="lbl">Staffel</span>
+           <input class="input" id="f_season" type="number" inputmode="numeric" value="${b.season || ""}" placeholder="1"></label>
+         <label class="fld"><span class="lbl">Folge</span>
+           <input class="input" id="f_episode" type="number" inputmode="numeric" value="${b.episode || ""}" placeholder="1"></label>
+       </div>
+       ${(b.total_seasons || b.total_episodes) ? `<div class="progress-hint">Insgesamt ${b.total_seasons || "?"} Staffeln${b.total_episodes ? " · " + b.total_episodes + " Folgen" : ""}</div>` : ""}
+       <label class="fld"><span class="lbl">Jahr</span>
+         <input class="input" id="f_year" type="number" inputmode="numeric" value="${b.published_year || ""}"></label>`
+    : mt === "movie"
+    ? `<div class="two-col">
+         <label class="fld"><span class="lbl">Laufzeit (Min.)</span>
+           <input class="input" id="f_runtime" type="number" inputmode="numeric" value="${b.runtime || ""}"></label>
+         <label class="fld"><span class="lbl">Jahr</span>
+           <input class="input" id="f_year" type="number" inputmode="numeric" value="${b.published_year || ""}"></label>
+       </div>`
+    : `<div class="two-col">
+         <label class="fld"><span class="lbl">Seiten</span>
+           <input class="input" id="f_pages" type="number" inputmode="numeric" value="${b.page_count || ""}"></label>
+         <label class="fld"><span class="lbl">Jahr</span>
+           <input class="input" id="f_year" type="number" inputmode="numeric" value="${b.published_year || ""}"></label>
+       </div>
+       <label class="fld"><span class="lbl">Verlag</span>
+         <input class="input" id="f_pub" value="${esc(b.publisher || "")}"></label>`;
+
   return `
     <div class="detail-hero">
       ${coverHTML(b, "").replace('class="cover-wrap ', 'style="width:112px" class="cover-wrap ')}
       <div class="dh-main">
         <div class="stars-input" id="stars">${[1,2,3,4,5].map((n) =>
           `<span class="s ${b.rating >= n ? "on" : ""}" data-n="${n}">★</span>`).join("")}</div>
-        <div class="dh-facts">
-          ${b.page_count ? b.page_count + " Seiten<br>" : ""}
-          ${b.publisher ? esc(b.publisher) + "<br>" : ""}
-          ${b.isbn13 ? "ISBN " + esc(b.isbn13) : ""}
-        </div>
+        <div class="dh-facts">${facts}</div>
         <div class="web-rating" id="webRating">${webRatingHTML(b)}</div>
       </div>
     </div>
-    ${b.title ? `<div class="store-links" id="storeLinks">${storeLinksHTML(b)}</div>` : ""}
+    ${links}
     <div id="klappentext">${klappentextHTML(b)}</div>
 
     <div class="status-pick" id="statusPick">
-      ${STATUSES.map(([k, l]) => `<button data-s="${k}" class="${(b.status || "read") === k ? "on" : ""}">${l}</button>`).join("")}
+      ${STATUS_KEYS.map((k) => `<button data-s="${k}" class="${(b.status || "read") === k ? "on" : ""}">${statusLabel(k, mt)}</button>`).join("")}
     </div>
 
     <label class="fld"><span class="lbl">Titel</span>
       <input class="input" id="f_title" value="${esc(b.title)}"></label>
-    <label class="fld"><span class="lbl">Autor:in</span>
+    <label class="fld"><span class="lbl">${authorLabel}</span>
       <input class="input" id="f_author" value="${esc(b.author || "")}" placeholder="wird gesucht…"></label>
 
-    <div class="two-col">
-      <label class="fld"><span class="lbl">Seiten</span>
-        <input class="input" id="f_pages" type="number" inputmode="numeric" value="${b.page_count || ""}"></label>
-      <label class="fld"><span class="lbl">Jahr</span>
-        <input class="input" id="f_year" type="number" inputmode="numeric" value="${b.published_year || ""}"></label>
-    </div>
-    <label class="fld"><span class="lbl">Verlag</span>
-      <input class="input" id="f_pub" value="${esc(b.publisher || "")}"></label>
+    ${midFields}
 
     <div class="two-col">
       <label class="fld"><span class="lbl">Angefangen</span>
         <input class="input" id="f_start" type="date" value="${b.date_started || ""}"></label>
-      <label class="fld"><span class="lbl">Beendet</span>
+      <label class="fld"><span class="lbl">${media ? "Gesehen am" : "Beendet"}</span>
         <input class="input" id="f_finish" type="date" value="${b.date_finished || ""}"></label>
     </div>
     <label class="fld"><span class="lbl">Notizen / Gedanken</span>
       <textarea class="input" id="f_notes" placeholder="Was ist dir geblieben?">${esc(b.notes || "")}</textarea></label>
     <input type="hidden" id="f_isbn" value="${esc(b.isbn13 || "")}">
 
-    ${missingWhen ? `<div class="hint">${I.info}<span>Magst du noch ergänzen, <b>wann</b> du es gelesen hast und <b>wie lange</b> du gebraucht hast? (optional)</span></div>` : ""}
+    ${missingWhen && !media ? `<div class="hint">${I.info}<span>Magst du noch ergänzen, <b>wann</b> du es gelesen hast und <b>wie lange</b> du gebraucht hast? (optional)</span></div>` : ""}
 
     <div class="sheet-actions">
       ${isNew ? "" : `<button class="btn danger" id="delBtn">Löschen</button>`}
@@ -676,9 +780,13 @@ function bookFormHTML(b, isNew) {
     </div>`;
 }
 
+async function getExtras(b) {
+  if (isMediaType(b.media_type)) return b.tmdb_id ? await getMediaDetails(b.tmdb_id, b.media_type) : {};
+  return await fetchExtras(b);
+}
 async function openReview(b) {
-  // Klappentext/Bewertung ergänzen, BEVOR gerendert wird (damit es beim Speichern mitkommt)
-  const ex = await fetchExtras(b);
+  // Klappentext/Bewertung/Staffeln ergänzen, BEVOR gerendert wird (damit es beim Speichern mitkommt)
+  const ex = await getExtras(b);
   Object.assign(b, ex);
   openSheet(bookFormHTML(b, true));
   bindForm(b, true);
@@ -686,7 +794,7 @@ async function openReview(b) {
 async function openDetail(b) {
   openSheet(bookFormHTML(b, false));   // vorhandenes Buch sofort zeigen
   bindForm(b, false);
-  const ex = await fetchExtras(b);      // fehlende Infos im Hintergrund nachtragen
+  const ex = await getExtras(b);        // fehlende Infos im Hintergrund nachtragen
   if (ex && (ex.description || ex.web_rating != null)) {
     Object.assign(b, ex);
     const wr = $("#webRating"); if (wr) wr.innerHTML = webRatingHTML(b);
@@ -716,20 +824,32 @@ function bindForm(b, isNew) {
       document.querySelectorAll("#statusPick button").forEach((x) => x.classList.toggle("on", x === btn)); });
 
   const saveBtn = $("#saveBtn");
+  const mt = draft.media_type || "book";
+  const val = (id) => { const e = $("#" + id); return e ? e.value : ""; };
+  const int = (id) => parseInt(val(id)) || null;
   saveBtn.onclick = async () => {
     const rec = {
-      title: $("#f_title").value.trim(),
-      author: $("#f_author").value.trim() || null,
-      page_count: parseInt($("#f_pages").value) || null,
-      published_year: parseInt($("#f_year").value) || null,
-      publisher: $("#f_pub").value.trim() || null,
-      date_started: $("#f_start").value || null,
-      date_finished: $("#f_finish").value || null,
-      notes: $("#f_notes").value.trim() || null,
+      title: val("f_title").trim(),
+      author: val("f_author").trim() || null,
+      published_year: int("f_year"),
+      date_started: val("f_start") || null,
+      date_finished: val("f_finish") || null,
+      notes: val("f_notes").trim() || null,
       status: draft.status,
       rating: draft.rating || null,
-      isbn13: $("#f_isbn").value || draft.isbn13 || null,
+      media_type: mt,
     };
+    if (mt === "series") {
+      rec.season = int("f_season"); rec.episode = int("f_episode");
+      rec.total_seasons = draft.total_seasons || null; rec.total_episodes = draft.total_episodes || null;
+      rec.tmdb_id = draft.tmdb_id || null;
+    } else if (mt === "movie") {
+      rec.runtime = int("f_runtime"); rec.tmdb_id = draft.tmdb_id || null;
+    } else {
+      rec.page_count = int("f_pages");
+      rec.publisher = val("f_pub").trim() || null;
+      rec.isbn13 = val("f_isbn") || draft.isbn13 || null;
+    }
     if (!rec.title) return toast("Titel fehlt");
     saveBtn.innerHTML = '<span class="spin"></span>'; saveBtn.disabled = true;
     if (DEMO) {
@@ -763,16 +883,16 @@ function bindForm(b, isNew) {
     catch (e) { toast("Löschen fehlgeschlagen"); }
   };
 
-  // Wenn Autor noch fehlt: im Hintergrund nachschlagen
-  if (isNew && !draft.author && draft.title) {
+  // Wenn Autor noch fehlt: im Hintergrund nachschlagen (nur Bücher)
+  if (isNew && mt === "book" && !draft.author && draft.title) {
     searchBooks(draft.title).then((r) => {
       if (r[0] && $("#f_author") && !$("#f_author").value) {
         const g = r[0];
         if (g.author) $("#f_author").value = g.author;
-        if (g.page_count && !$("#f_pages").value) $("#f_pages").value = g.page_count;
-        if (g.published_year && !$("#f_year").value) $("#f_year").value = g.published_year;
-        if (g.publisher && !$("#f_pub").value) $("#f_pub").value = g.publisher;
-        if (g.isbn13) $("#f_isbn").value = g.isbn13;
+        if (g.page_count && $("#f_pages") && !$("#f_pages").value) $("#f_pages").value = g.page_count;
+        if (g.published_year && $("#f_year") && !$("#f_year").value) $("#f_year").value = g.published_year;
+        if (g.publisher && $("#f_pub") && !$("#f_pub").value) $("#f_pub").value = g.publisher;
+        if (g.isbn13 && $("#f_isbn")) $("#f_isbn").value = g.isbn13;
       }
     }).catch(() => {});
   }

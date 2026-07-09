@@ -198,17 +198,17 @@ export function parseUtterance(text) {
 
   let status = "read"; // Standard: Logbuch gelesener Bücher
   const wantsToRead =
-    (/\b(will|möchte|moechte|wollte|muss|müsste|sollte|würde gern|wuerde gern)\b/.test(t) && /\blesen\b/.test(t)) ||
+    (/\b(will|möchte|moechte|wollte|muss|müsste|sollte|würde gern|wuerde gern)\b/.test(t) && /\b(lesen|sehen|schauen|gucken|anschauen|ansehen)\b/.test(t)) ||
     /\b(vormerken|vormerk)\b/.test(t) ||
-    /(auf (die|meine)|zur).{0,25}(will[- ]?lese|lese ?liste|merk ?liste|wunschliste)/.test(t) ||
-    /\bnoch lesen\b/.test(t);
+    /(auf (die|meine)|zur).{0,25}(will[- ]?(lese|seh)|lese ?liste|seh ?liste|merk ?liste|wunschliste|watchlist)/.test(t) ||
+    /\bnoch (lesen|sehen|schauen|gucken)\b/.test(t);
   const currentlyReading =
-    /\b(lese|les)\b.{0,15}\b(gerade|grade|zurzeit|zur zeit|aktuell|momentan)\b/.test(t) ||
-    /\bgerade (am lesen|dabei|mitten)\b/.test(t) ||
-    /\bbin (gerade )?(dabei|mitten|am lesen)\b/.test(t) ||
-    /\bam lesen\b/.test(t);
+    /\b(lese|les|schaue|schau|gucke|guck)\b.{0,15}\b(gerade|grade|zurzeit|zur zeit|aktuell|momentan)\b/.test(t) ||
+    /\bgerade (am lesen|am schauen|am gucken|dabei|mitten)\b/.test(t) ||
+    /\bbin (gerade )?(dabei|mitten|am lesen|am schauen|am gucken)\b/.test(t) ||
+    /\b(am lesen|am schauen|am gucken)\b/.test(t);
   const alreadyRead =
-    /\b(gelesen|durchgelesen|ausgelesen|durch|fertig|beendet)\b/.test(t);
+    /\b(gelesen|durchgelesen|ausgelesen|gesehen|geschaut|angeschaut|angesehen|geguckt|durchgeschaut|durch|fertig|beendet)\b/.test(t);
 
   if (wantsToRead) status = "want";
   else if (currentlyReading) status = "reading";
@@ -224,6 +224,8 @@ export function parseUtterance(text) {
     /\baktuell\b/gi, /\bmomentan\b/gi, /\bbin (dabei|mitten|am)\b/gi, /\bam lesen\b/gi,
     /\bdas buch\b/gi, /\bden roman\b/gi, /\bden titel\b/gi, /\bdie geschichte\b/gi,
     /\b(durch)?gelesen\b/gi, /\bausgelesen\b/gi, /\blesen\b/gi, /\blese\b/gi,
+    /\b(an)?(gesehen|geschaut|geguckt|angesehen)\b/gi, /\b(an)?(sehen|schauen|gucken|anschauen)\b/gi,
+    /\b(schaue|schau|gucke|guck)\b/gi, /\bden film\b/gi, /\bdie serie\b/gi,
     /\bvormerken\b/gi, /\bauf (die|meine) (will[- ]?lese|lese|merk|wunsch)liste\b/gi,
     /\bnoch\b/gi, /\bschon\b/gi, /\bmal\b/gi, /\beinfach\b/gi, /\bjetzt\b/gi,
     /\bfertig\b/gi, /\bbeendet\b/gi, /\bgerade dabei\b/gi,

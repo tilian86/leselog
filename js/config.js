@@ -7,6 +7,9 @@ export const CONFIG = {
   // Google Books API-Key (nur Books API freigeschaltet) – eigenes Kontingent, keine 429 mehr.
   GBOOKS_KEY: "AIzaSyC6NrAnOw5HqnbyUt6_IA7VyHl623FHUQU",
 
+  // TMDb API-Key (v3) für Filme & Serien.
+  TMDB_KEY: "d87a53b54092bf1296abdb9c8c6248eb",
+
   // Cloudflare Worker für die gute KI-Transkription (ElevenLabs Scribe).
   // Solange leer: das iPhone transkribiert selbst (Offline-Notnagel).
   TRANSCRIBE_URL: "",
