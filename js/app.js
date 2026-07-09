@@ -212,7 +212,8 @@ function renderMain() {
   const main = $("#main");
   if (!main) return;
   const mediaBooks = state.books.filter((b) => (b.media_type || "book") === state.mediaType);
-  $("#countPill").textContent = mediaBooks.length + " " + typeName();
+  const one = { book: "Buch", movie: "Film", series: "Serie" }[state.mediaType];
+  $("#countPill").textContent = mediaBooks.length + " " + (mediaBooks.length === 1 ? one : typeName());
   document.querySelectorAll(".dock .tab").forEach((t) =>
     t.classList.toggle("on", t.dataset.view === state.view));
 

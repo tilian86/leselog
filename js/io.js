@@ -3,11 +3,17 @@
 const EXPORT_COLUMNS = [
   ["Title", "title"],
   ["Author", "author"],
+  ["Type", "media_type"],
   ["ISBN", "isbn10"],
   ["ISBN13", "isbn13"],
   ["Publisher", "publisher"],
   ["Year", "published_year"],
   ["Pages", "page_count"],
+  ["Season", "season"],
+  ["Episode", "episode"],
+  ["Seasons", "total_seasons"],
+  ["Episodes", "total_episodes"],
+  ["Runtime", "runtime"],
   ["Rating", "rating"],
   ["Status", "status"],
   ["Started", "date_started"],
@@ -79,6 +85,12 @@ const FIELD_ALIASES = {
   date_started: ["started", "date started", "date added", "angefangen", "begonnen"],
   date_finished: ["finished", "date read", "beendet", "gelesen am", "read date"],
   notes: ["notes", "notizen", "my review", "review", "gedanken", "kommentar"],
+  media_type: ["type", "typ", "medium", "media_type"],
+  season: ["season", "staffel"],
+  episode: ["episode", "folge"],
+  total_seasons: ["seasons", "staffeln"],
+  total_episodes: ["episodes", "folgen"],
+  runtime: ["runtime", "laufzeit"],
 };
 
 function cleanIsbn(v) { return v ? String(v).replace(/[^0-9Xx]/g, "") : ""; }
@@ -120,11 +132,17 @@ export async function parseImportFile(file) {
     const rec = normalizeRecord({
       title: get("title"),
       author: get("author"),
+      media_type: get("media_type"),
       isbn13: cleanIsbn(get("isbn13")) || (cleanIsbn(get("isbn10")).length === 13 ? cleanIsbn(get("isbn10")) : ""),
       isbn10: cleanIsbn(get("isbn10")).length === 10 ? cleanIsbn(get("isbn10")) : "",
       publisher: get("publisher"),
       published_year: get("published_year"),
       page_count: get("page_count"),
+      season: get("season"),
+      episode: get("episode"),
+      total_seasons: get("total_seasons"),
+      total_episodes: get("total_episodes"),
+      runtime: get("runtime"),
       rating: get("rating"),
       status: get("status"),
       date_started: get("date_started"),
@@ -140,21 +158,38 @@ function toYear(v) { const m = String(v || "").match(/\d{4}/); return m ? parseI
 function toDate(v) { const m = String(v || "").match(/\d{4}-\d{2}-\d{2}/); return m ? m[0] : null; }
 function toInt(v) { const n = parseInt(String(v || "").replace(/[^\d]/g, ""), 10); return isNaN(n) ? null : n; }
 
+function mapType(v) {
+  const s = String(v || "").toLowerCase();
+  if (/movie|film/.test(s)) return "movie";
+  if (/series|serie|tv|show/.test(s)) return "series";
+  return "book";
+}
+
 function normalizeRecord(r) {
+  const mt = mapType(r.media_type);
+  const media = mt !== "book";
   const isbn13 = r.isbn13 ? cleanIsbn(r.isbn13) : null;
   const isbn10 = r.isbn10 ? cleanIsbn(r.isbn10) : null;
   const rating = toInt(r.rating);
   let cover = r.cover_url || null;
-  if (!cover && isbn13) cover = `https://covers.openlibrary.org/b/isbn/${isbn13}-L.jpg`;
-  else if (!cover && isbn10) cover = `https://covers.openlibrary.org/b/isbn/${isbn10}-L.jpg`;
+  if (!media && !cover && isbn13) cover = `https://covers.openlibrary.org/b/isbn/${isbn13}-L.jpg`;
+  else if (!media && !cover && isbn10) cover = `https://covers.openlibrary.org/b/isbn/${isbn10}-L.jpg`;
   return {
     title: (r.title || "").trim(),
     author: r.author ? String(r.author).trim() : null,
-    isbn13: isbn13 && isbn13.length === 13 ? isbn13 : null,
-    isbn10: isbn10 && isbn10.length === 10 ? isbn10 : null,
-    publisher: r.publisher ? String(r.publisher).trim() : null,
+    media_type: mt,
+    isbn13: !media && isbn13 && isbn13.length === 13 ? isbn13 : null,
+    isbn10: !media && isbn10 && isbn10.length === 10 ? isbn10 : null,
+    publisher: !media && r.publisher ? String(r.publisher).trim() : null,
     published_year: r.published_year ? (toYear(r.published_year) || toInt(r.published_year)) : null,
-    page_count: toInt(r.page_count),
+    page_count: media ? null : toInt(r.page_count),
+    season: media ? toInt(r.season) : null,
+    episode: media ? toInt(r.episode) : null,
+    total_seasons: media ? toInt(r.total_seasons) : null,
+    total_episodes: media ? toInt(r.total_episodes) : null,
+    runtime: mt === "movie" ? toInt(r.runtime) : null,
+    tmdb_id: media ? (toInt(r.tmdb_id) || null) : null,
+    description: r.description ? String(r.description).trim() : null,
     rating: rating && rating >= 1 && rating <= 5 ? rating : null,
     status: mapStatus(r.status),
     date_started: toDate(r.date_started),

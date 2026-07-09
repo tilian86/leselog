@@ -25,7 +25,6 @@ function normalize(item, media) {
     description: item.overview || null,
     web_rating: item.vote_average ? Math.round(item.vote_average) / 2 : null, // 10er → 5er Skala
     web_rating_count: item.vote_count || null,
-    tmdb_vote: item.vote_average || null,
   };
 }
 
