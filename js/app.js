@@ -36,8 +36,8 @@ const MEDIA = [["book", "📚", "Bücher"], ["movie", "🎬", "Filme"], ["series
 const isMediaType = (mt) => mt === "movie" || mt === "series";
 function typeName(mt) { return (MEDIA.find((m) => m[0] === (mt || state.mediaType)) || MEDIA[0])[2]; }
 function statusLabel(status, mt) {
-  const book = { read: "Gelesen", reading: "Lese gerade", want: "Will lesen" };
-  const media = { read: "Gesehen", reading: "Schaue gerade", want: "Will sehen" };
+  const book = { read: "Gelesen", reading: "Lese gerade", want: "Will lesen", dropped: "Abgebrochen" };
+  const media = { read: "Gesehen", reading: "Schaue gerade", want: "Will sehen", dropped: "Abgebrochen" };
   return (isMediaType(mt || state.mediaType) ? media : book)[status] || status;
 }
 
@@ -54,10 +54,11 @@ const SORTS = [
 const DEMO = location.hash.includes("demo");
 const DEMO_BOOKS = [
   { id: "d1", title: "Soloalbum", author: "Benjamin von Stuckrad-Barre", page_count: 240, published_year: 1998, publisher: "Kiepenheuer & Witsch", status: "read", rating: 4, date_finished: "2026-01-15", cover_url: null, isbn13: "9783462027004", isbn10: "3462027000", web_rating: 3.6, web_rating_count: 214, description: "Ein junger Musikjournalist stürzt nach dem Ende einer Beziehung in eine Krise: zwischen Plattenrezensionen, Popkultur und Liebeskummer erzählt Stuckrad-Barres Debüt vom Lebensgefühl einer Generation – rasant, komisch und voller Musik." },
-  { id: "d2", title: "Tschick", author: "Wolfgang Herrndorf", page_count: 248, published_year: 2010, publisher: "Rowohlt", status: "read", rating: 5, date_finished: "2026-03-10", cover_url: "https://covers.openlibrary.org/b/id/8418261-L.jpg", isbn13: "9783871347108", web_rating: 4.4, web_rating_count: 1893, description: "Maik und der Russlanddeutsche Tschick brechen in einem geklauten Lada zu einer Reise durch die ostdeutsche Provinz auf – eine warmherzige, komische Coming-of-Age-Geschichte über Freundschaft und den Sommer des Lebens." },
+  { id: "d2", title: "Tschick", author: "Wolfgang Herrndorf", page_count: 248, published_year: 2010, publisher: "Rowohlt", status: "read", rating: 5, highlight: true, date_finished: "2026-03-10", cover_url: "https://covers.openlibrary.org/b/id/8418261-L.jpg", isbn13: "9783871347108", web_rating: 4.4, web_rating_count: 1893, description: "Maik und der Russlanddeutsche Tschick brechen in einem geklauten Lada zu einer Reise durch die ostdeutsche Provinz auf – eine warmherzige, komische Coming-of-Age-Geschichte über Freundschaft und den Sommer des Lebens." },
   { id: "d3", title: "Die Vermessung der Welt", author: "Daniel Kehlmann", page_count: 272, published_year: 2005, publisher: "Rowohlt", status: "reading", rating: 0, cover_url: "https://covers.openlibrary.org/b/id/1165201-L.jpg" },
-  { id: "d4", title: "Der Steppenwolf", author: "Hermann Hesse", page_count: 224, published_year: 1927, publisher: "S. Fischer", status: "read", rating: 5, date_finished: "2026-03-22", cover_url: "https://covers.openlibrary.org/b/id/3221083-L.jpg" },
+  { id: "d4", title: "Der Steppenwolf", author: "Hermann Hesse", page_count: 224, published_year: 1927, publisher: "S. Fischer", status: "read", rating: 5, highlight: true, date_finished: "2026-03-22", cover_url: "https://covers.openlibrary.org/b/id/3221083-L.jpg" },
   { id: "d5", title: "Nachts ist es leiser in Teheran", author: "Shida Bazyar", page_count: 288, published_year: 2016, status: "want", rating: 0, cover_url: null },
+  { id: "d6", title: "Der Turm", author: "Uwe Tellkamp", page_count: 976, published_year: 2008, publisher: "Suhrkamp", status: "dropped", rating: 2, abandon_reason: "Nach 200 Seiten hängengeblieben – zu ausschweifend, kam nicht rein.", date_started: "2026-02-01", cover_url: null },
   { id: "m1", media_type: "movie", title: "Matrix", author: "Lana & Lilly Wachowski", published_year: 1999, runtime: 136, status: "read", rating: 5, date_finished: "2026-02-10", web_rating: 4.1, web_rating_count: 24000, tmdb_id: 603, cover_url: "https://image.tmdb.org/t/p/w500/iVmDLujHcV1zaMnaahKWn4TcCS6.jpg", description: "Der Hacker Neo entdeckt, dass die Wirklichkeit eine Computersimulation ist, und schließt sich dem Widerstand gegen die Maschinen an." },
   { id: "s1", media_type: "series", title: "Dark", author: "Baran bo Odar, Jantje Friese", published_year: 2017, total_seasons: 3, total_episodes: 26, season: 2, episode: 5, status: "reading", rating: 5, web_rating: 4.3, web_rating_count: 5200, tmdb_id: 70523, cover_url: "https://image.tmdb.org/t/p/w500/7yQyDCqSazrYTnmxdQLAZ8YDH87.jpg", description: "In der Kleinstadt Winden verschwinden Kinder – eine Zeitreise-Mystery über vier Familien und die Abgründe der Zeit." },
 ];
@@ -108,9 +109,10 @@ function coverImg(b) {
 function coverHTML(b, cls = "") {
   const status = b.status && b.status !== "read"
     ? `<span class="badge-status ${b.status}">${statusLabel(b.status, b.media_type)}</span>` : "";
+  const hl = b.highlight ? `<span class="badge-highlight" title="Highlight">★</span>` : "";
   // Fallback (Titel/Autor auf Buchrücken) liegt immer darunter; das Bild deckt es ab.
   const fallback = `<div class="cover-fallback"><div class="ft">${esc(b.title)}</div><div class="fa">${esc(b.author || "")}</div></div>`;
-  return `<div class="cover-wrap ${cls}">${status}${fallback}${coverImg(b)}</div>`;
+  return `<div class="cover-wrap ${cls}">${hl}${status}${fallback}${coverImg(b)}</div>`;
 }
 function stars(n) { return n ? "★".repeat(n) + "☆".repeat(5 - n) : ""; }
 function escPlain(s) { return esc(String(s || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim()); }
@@ -219,9 +221,11 @@ function renderMain() {
 
   if (state.view === "stats") return renderStats(main);
 
-  const filters = [["all", "Alle"], ["read", statusLabel("read")], ["reading", statusLabel("reading")], ["want", statusLabel("want")]];
-  const counts = { all: mediaBooks.length, read: 0, reading: 0, want: 0 };
-  mediaBooks.forEach((b) => { const s = b.status || "read"; if (counts[s] != null) counts[s]++; });
+  const filters = [["all", "Alle"], ["read", statusLabel("read")], ["reading", statusLabel("reading")],
+    ["want", statusLabel("want")], ["dropped", statusLabel("dropped")], ["highlight", "★ Highlights"]];
+  const counts = { all: mediaBooks.length, read: 0, reading: 0, want: 0, dropped: 0, highlight: 0 };
+  mediaBooks.forEach((b) => { const s = b.status || "read"; if (counts[s] != null) counts[s]++;
+    if (b.highlight) counts.highlight++; });
   const list = liveList();
 
   main.innerHTML = `
@@ -270,7 +274,8 @@ function rowHTML(b) {
 
 function liveList() {
   let list = state.books.filter((b) => (b.media_type || "book") === state.mediaType);
-  if (state.filter !== "all") list = list.filter((b) => (b.status || "read") === state.filter);
+  if (state.filter === "highlight") list = list.filter((b) => b.highlight);
+  else if (state.filter !== "all") list = list.filter((b) => (b.status || "read") === state.filter);
   if (state.search) { const q = state.search.toLowerCase();
     list = list.filter((b) => (b.title + " " + (b.author || "")).toLowerCase().includes(q)); }
   return sortBooks(list);
@@ -693,7 +698,7 @@ function showCandidates(results, parsed) {
 // ================================================================
 //  Review / Formular (neu ODER bearbeiten)
 // ================================================================
-const STATUS_KEYS = ["read", "reading", "want"];
+const STATUS_KEYS = ["read", "reading", "want", "dropped"];
 
 function bookFormHTML(b, isNew) {
   b = b || {};
@@ -742,8 +747,11 @@ function bookFormHTML(b, isNew) {
     <div class="detail-hero">
       ${coverHTML(b, "").replace('class="cover-wrap ', 'style="width:112px" class="cover-wrap ')}
       <div class="dh-main">
-        <div class="stars-input" id="stars">${[1,2,3,4,5].map((n) =>
-          `<span class="s ${b.rating >= n ? "on" : ""}" data-n="${n}">★</span>`).join("")}</div>
+        <div class="stars-row">
+          <div class="stars-input" id="stars">${[1,2,3,4,5].map((n) =>
+            `<span class="s ${b.rating >= n ? "on" : ""}" data-n="${n}">★</span>`).join("")}</div>
+          <button type="button" class="hl-toggle ${b.highlight ? "on" : ""}" id="hlToggle" title="Als Highlight markieren">★ Highlight</button>
+        </div>
         <div class="dh-facts">${facts}</div>
         <div class="web-rating" id="webRating">${webRatingHTML(b)}</div>
       </div>
@@ -754,6 +762,10 @@ function bookFormHTML(b, isNew) {
     <div class="status-pick" id="statusPick">
       ${STATUS_KEYS.map((k) => `<button data-s="${k}" class="${(b.status || "read") === k ? "on" : ""}">${statusLabel(k, mt)}</button>`).join("")}
     </div>
+
+    <label class="fld abandon-fld" id="abandonFld" style="${(b.status === "dropped") ? "" : "display:none"}">
+      <span class="lbl">Warum abgebrochen?</span>
+      <textarea class="input" id="f_abandon" placeholder="z. B. zäh geworden, Thema doch nichts für mich …">${esc(b.abandon_reason || "")}</textarea></label>
 
     <label class="fld"><span class="lbl">Titel</span>
       <input class="input" id="f_title" value="${esc(b.title)}"></label>
@@ -768,6 +780,8 @@ function bookFormHTML(b, isNew) {
       <label class="fld"><span class="lbl">${media ? "Gesehen am" : "Beendet"}</span>
         <input class="input" id="f_finish" type="date" value="${b.date_finished || ""}"></label>
     </div>
+    <label class="check-line"><input type="checkbox" id="f_startunknown" ${b.date_started ? "" : (b.date_finished ? "checked" : "")}>
+      <span>Startdatum unbekannt (nur Ende bekannt)</span></label>
     <label class="fld"><span class="lbl">Notizen / Gedanken</span>
       <textarea class="input" id="f_notes" placeholder="Was ist dir geblieben?">${esc(b.notes || "")}</textarea></label>
     <input type="hidden" id="f_isbn" value="${esc(b.isbn13 || "")}">
@@ -810,6 +824,7 @@ function bindForm(b, isNew) {
   const draft = { ...b };
   draft.status = draft.status || "read";
   draft.rating = draft.rating || 0;
+  draft.highlight = !!draft.highlight;
   bindKlappentext();
 
   // Sterne
@@ -818,25 +833,45 @@ function bindForm(b, isNew) {
   document.querySelectorAll("#stars .s").forEach((s) =>
     s.onclick = () => { draft.rating = (draft.rating === +s.dataset.n) ? 0 : +s.dataset.n; paint(); });
 
-  // Status
+  // Highlight-Schalter
+  const hlBtn = $("#hlToggle");
+  if (hlBtn) hlBtn.onclick = () => { draft.highlight = !draft.highlight; hlBtn.classList.toggle("on", draft.highlight); };
+
+  // Status (blendet bei „Abgebrochen“ das Grund-Feld ein)
+  const abandonFld = $("#abandonFld");
   document.querySelectorAll("#statusPick button").forEach((btn) =>
     btn.onclick = () => { draft.status = btn.dataset.s;
-      document.querySelectorAll("#statusPick button").forEach((x) => x.classList.toggle("on", x === btn)); });
+      document.querySelectorAll("#statusPick button").forEach((x) => x.classList.toggle("on", x === btn));
+      if (abandonFld) abandonFld.style.display = (draft.status === "dropped") ? "" : "none"; });
+
+  // Startdatum unbekannt: Feld sperren/leeren
+  const startInp = $("#f_start");
+  const startUnknown = $("#f_startunknown");
+  const applyStartUnknown = () => {
+    if (!startInp || !startUnknown) return;
+    startInp.disabled = startUnknown.checked;
+    startInp.style.opacity = startUnknown.checked ? "0.45" : "";
+    if (startUnknown.checked) startInp.value = "";
+  };
+  if (startUnknown) { startUnknown.onchange = applyStartUnknown; applyStartUnknown(); }
 
   const saveBtn = $("#saveBtn");
   const mt = draft.media_type || "book";
   const val = (id) => { const e = $("#" + id); return e ? e.value : ""; };
   const int = (id) => parseInt(val(id)) || null;
   saveBtn.onclick = async () => {
+    const startUnknown = $("#f_startunknown");
     const rec = {
       title: val("f_title").trim(),
       author: val("f_author").trim() || null,
       published_year: int("f_year"),
-      date_started: val("f_start") || null,
+      date_started: (startUnknown && startUnknown.checked) ? null : (val("f_start") || null),
       date_finished: val("f_finish") || null,
       notes: val("f_notes").trim() || null,
       status: draft.status,
       rating: draft.rating || null,
+      highlight: !!draft.highlight,
+      abandon_reason: draft.status === "dropped" ? (val("f_abandon").trim() || null) : null,
       media_type: mt,
     };
     if (mt === "series") {

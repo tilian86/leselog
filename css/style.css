@@ -324,12 +324,42 @@ textarea.input { resize: vertical; min-height: 70px; line-height: 1.5; }
 .two-col { display: flex; gap: 12px; }
 .two-col > * { flex: 1; }
 
-.status-pick { display: flex; gap: 8px; margin-top: 6px; }
+.status-pick { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
 .status-pick button {
-  flex: 1; padding: 11px; border-radius: 11px; border: 1px solid var(--line);
+  flex: 1 1 calc(50% - 4px); padding: 11px; border-radius: 11px; border: 1px solid var(--line);
   background: var(--paper-2); font-weight: 600; font-size: 14px; color: var(--ink-soft);
 }
 .status-pick button.on { background: var(--accent); color: #fff; border-color: transparent; }
+.status-pick button[data-s="dropped"].on { background: #8a4a3d; }
+
+/* Highlight-Schalter + Sterne-Zeile */
+.stars-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.hl-toggle {
+  font-size: 12.5px; font-weight: 700; letter-spacing: .3px; padding: 6px 11px;
+  border-radius: 999px; border: 1px solid var(--line); background: var(--paper-2);
+  color: var(--ink-soft); white-space: nowrap;
+}
+.hl-toggle.on { background: var(--gold); color: #fff; border-color: transparent; }
+
+/* Abbruch-Grund erbt Warn-Look */
+.abandon-fld textarea.input { min-height: 56px; }
+
+/* Häkchen-Zeile (Startdatum unbekannt) */
+.check-line { display: flex; align-items: center; gap: 9px; margin-top: 10px;
+  font-size: 13.5px; color: var(--ink-soft); cursor: pointer; }
+.check-line input { width: 18px; height: 18px; accent-color: var(--accent); flex-shrink: 0; }
+
+/* Abgebrochen-Badge auf Cover + Liste */
+.badge-status.dropped { background: rgba(138,74,61,0.92); }
+.row-status.dropped { color: #a8574a; border-color: rgba(138,74,61,.4); }
+
+/* Highlight-Stern auf dem Cover (oben links) */
+.badge-highlight {
+  position: absolute; top: 8px; left: 8px; z-index: 2;
+  font-size: 13px; line-height: 1; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.5);
+  filter: drop-shadow(0 0 1px rgba(0,0,0,.4));
+}
+.cover-wrap.thumb .badge-highlight { top: 4px; left: 4px; font-size: 11px; }
 
 .sort-list { display: flex; flex-direction: column; gap: 0; margin-top: 6px; }
 .sort-opt { display: flex; align-items: center; justify-content: space-between; width: 100%;
