@@ -1,0 +1,25 @@
+name: Supabase Keep-Alive
+
+# Verhindert das automatische Pausieren des Free-Tier-Projekts.
+# Supabase pausiert nach 7 Tagen ohne DB-Aktivität – dieser Job schickt
+# alle 2 Tage eine winzige Abfrage an die REST-API (= echte DB-Aktivität).
+
+on:
+  schedule:
+    - cron: "0 6 */2 * *"   # alle 2 Tage um 06:00 UTC
+  workflow_dispatch:          # erlaubt manuelles Auslösen im Actions-Tab
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Datenbank anpingen
+        run: |
+          code=$(curl -s -o /dev/null -w "%{http_code}" \
+            "https://wejvvldovywrernuujgt.supabase.co/rest/v1/books?select=id&limit=1" \
+            -H "apikey: sb_publishable_ZyFVdlb-Kxuvo6T5SJ43cw_I5l6LBTz")
+          echo "Supabase antwortete mit HTTP $code"
+          if [ "$code" != "200" ]; then
+            echo "Unerwarteter Status – Ping fehlgeschlagen."
+            exit 1
+          fi
