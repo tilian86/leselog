@@ -2,7 +2,7 @@
 import { CONFIG } from "./config.js";
 import { currentSession, onAuth, signInPassword, signUpPassword, signOut,
          fetchBooks, insertBook, insertBooks, updateBook, removeBook } from "./supa.js";
-import { searchBooks, searchByISBN, guessReadingDays, parseUtterance, storeLinks, fetchExtras } from "./enrich.js";
+import { searchBooks, searchByISBN, guessReadingDays, parseUtterance, storeLinks, fetchExtras, searchCovers } from "./enrich.js";
 import { startDictation, hasMic } from "./audio.js";
 import { startScanner } from "./scan.js";
 import { readEpubMeta } from "./epub.js";
@@ -473,10 +473,22 @@ function titleWords(s) {
 }
 function pickHit(b, results) {
   const qw = titleWords(b.title);
+  // Nachname des eingetragenen Autors — entscheidet zwischen dem Buch selbst
+  // und Sekundärliteratur ("… Lektüre von Juli Zehs Roman Über Menschen").
+  const lastName = ((b.author || "").split(",")[0].trim().split(/\s+/).pop() || "").toLowerCase();
   const scored = results.map((h) => {
     const hw = titleWords(h.title);
-    const ov = qw.size ? [...qw].filter((w) => hw.has(w)).length / qw.size : (h.title ? 1 : 0);
-    return { h, score: ov + (h.cover_url ? 0.3 : 0), ov };
+    const hits = [...qw].filter((w) => hw.has(w)).length;
+    const ov = qw.size ? hits / qw.size : (h.title ? 1 : 0);
+    let score = ov + (h.cover_url ? 0.3 : 0);
+    // Treffertitel mit vielen Wörtern, die NICHT aus der Anfrage stammen, abwerten
+    score -= Math.min(0.6, Math.max(0, hw.size - hits) * 0.12);
+    if (lastName.length > 2) {
+      const ha = (h.author || "").toLowerCase();
+      if (ha.includes(lastName)) score += 0.5;
+      else if (ha) score -= 0.35;
+    }
+    return { h, score, ov };
   }).filter((x) => x.ov >= 0.34);
   scored.sort((a, b2) => b2.score - a.score);
   return scored.length ? scored[0].h : null;
@@ -754,6 +766,7 @@ function bookFormHTML(b, isNew) {
         </div>
         <div class="dh-facts">${facts}</div>
         <div class="web-rating" id="webRating">${webRatingHTML(b)}</div>
+        ${!isNew && !media ? `<button type="button" class="cover-search-link" id="coverBtn">${b.cover_url ? "Cover falsch? Anderes suchen" : "Cover suchen"} …</button>` : ""}
       </div>
     </div>
     ${links}
@@ -820,12 +833,63 @@ function bindKlappentext() {
   if (t) t.onclick = () => t.classList.toggle("clamp");
 }
 
+// Cover-Picker: Kandidaten aus mehreren Katalogen zeigen, ein Tipp übernimmt das Cover.
+async function openCoverPicker(b) {
+  openSheet(`<h2>Cover auswählen</h2>
+    <p class="sub">„${esc(b.title)}"${b.author ? " von " + esc(b.author) : ""}</p>
+    <div class="center-load"><span class="spin dark"></span>Suche in Buchkatalogen …</div>`);
+  let cands = [];
+  try { cands = await searchCovers(b); } catch (_) {}
+  const grid = cands.map((c) =>
+    `<button type="button" class="cover-cand" data-url="${esc(c.url)}" title="${esc(c.source)}">
+       <img src="${esc(c.url)}" loading="lazy" alt=""
+         onload="if(this.naturalWidth&amp;&amp;this.naturalWidth&lt;10)this.closest('.cover-cand').remove()"
+         onerror="this.closest('.cover-cand').remove()">
+     </button>`).join("");
+  const amazonSearch = "https://www.amazon.de/s?k=" + encodeURIComponent([b.title, b.author].filter(Boolean).join(" ")) + "&i=stripbooks";
+  openSheet(`<h2>Cover auswählen</h2>
+    <p class="sub">Tippe auf das richtige Cover für „${esc(b.title)}". Quellen: Google Books, OpenLibrary, Amazon, Apple Books.</p>
+    ${grid ? `<div class="cover-grid">${grid}</div>`
+           : `<p class="sub">In den Katalogen war nichts zu finden — bei Selfpublisher-Büchern passiert das leider oft.</p>`}
+    <div class="cover-manual">
+      <p class="sub">Nichts dabei? <a href="${esc(amazonSearch)}" target="_blank" rel="noopener">Bei Amazon suchen ↗</a>, dort das Cover gedrückt halten → „Bild kopieren" / Bild-Adresse kopieren und hier einfügen:</p>
+      <div class="cover-manual-row">
+        <input class="input" id="coverUrlInp" type="url" placeholder="https://…/cover.jpg">
+        <button type="button" class="btn" id="coverUrlBtn">Übernehmen</button>
+      </div>
+    </div>
+    <div class="sheet-actions"><button class="btn" id="coverBack">Zurück</button></div>`);
+  $("#coverBack").onclick = () => openDetail(b);
+  const applyCover = async (url) => {
+    try {
+      const saved = await updateBook(b.id, { cover_url: url });
+      const i = state.books.findIndex((x) => x.id === b.id);
+      if (i > -1) state.books[i] = saved;
+      Object.assign(b, saved);
+      toast("Cover aktualisiert ✨");
+      renderMain();
+      openDetail(b);
+    } catch (_) { toast("Konnte Cover nicht speichern"); }
+  };
+  $("#coverUrlBtn").onclick = () => {
+    const url = $("#coverUrlInp").value.trim();
+    if (!/^https?:\/\/.+/.test(url)) return toast("Bitte eine Bild-Adresse (https://…) einfügen");
+    applyCover(url.replace(/^http:/, "https:"));
+  };
+  document.querySelectorAll(".cover-cand").forEach((el) => {
+    el.onclick = () => applyCover(el.dataset.url);
+  });
+}
+
 function bindForm(b, isNew) {
   const draft = { ...b };
   draft.status = draft.status || "read";
   draft.rating = draft.rating || 0;
   draft.highlight = !!draft.highlight;
   bindKlappentext();
+
+  const coverBtn = $("#coverBtn");
+  if (coverBtn) coverBtn.onclick = () => openCoverPicker(b);
 
   // Sterne
   const paint = () => document.querySelectorAll("#stars .s").forEach((s) =>

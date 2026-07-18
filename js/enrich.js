@@ -189,6 +189,61 @@ export async function searchByISBN(isbn) {
   return null;
 }
 
+// ---- Cover-Kandidaten aus mehreren Quellen (für den Cover-Picker) ----
+// Liefert [{url, source}] — URLs werden nur als <img> genutzt, kaputte Quellen
+// verschwinden clientseitig über onerror/naturalWidth-Check.
+export async function searchCovers(b) {
+  const out = [];
+  const seen = new Set();
+  const push = (url, source) => {
+    if (!url) return;
+    const k = url.replace(/^https?:/, "");
+    if (seen.has(k)) return;
+    seen.add(k);
+    out.push({ url, source });
+  };
+  const fromIsbn = (isbn13, isbn10, source) => {
+    if (isbn13) push(`https://covers.openlibrary.org/b/isbn/${isbn13}-L.jpg?default=false`, source + " · OpenLibrary");
+    if (isbn10) push(`https://images-na.ssl-images-amazon.com/images/P/${isbn10}.01._SCLZZZZZZZ_.jpg`, source + " · Amazon");
+  };
+  const title = (b.title || "").trim();
+  const author = ((b.author || "").split(",")[0] || "").trim();
+  if (!title) return out;
+
+  // 1) Google Books: gezielte Titel(+Autor)-Suche, alle Editionen
+  try {
+    const q = `intitle:"${title}"` + (author ? ` inauthor:"${author}"` : "");
+    (await gbooks("q=" + encodeURIComponent(q))).forEach((h) => {
+      if (h.cover_url) push(h.cover_url, "Google Books");
+      fromIsbn(h.isbn13, h.isbn10, "Edition");
+    });
+  } catch (_) {}
+  // 2) Google Books: freie Suche als zweites Netz
+  try {
+    (await gbooks("q=" + encodeURIComponent([title, author].filter(Boolean).join(" ")))).forEach((h) => {
+      if (h.cover_url) push(h.cover_url, "Google Books");
+      fromIsbn(h.isbn13, h.isbn10, "Edition");
+    });
+  } catch (_) {}
+  // 3) OpenLibrary-Suche
+  try {
+    (await olSearch([title, author].filter(Boolean).join(" "))).forEach((h) => {
+      if (h.cover_url) push(h.cover_url.includes("?") ? h.cover_url : h.cover_url + "?default=false", "OpenLibrary");
+    });
+  } catch (_) {}
+  // 4) Apple Books (findet oft Selfpublisher-Titel; scheitert still, falls CORS blockt)
+  try {
+    const r = await fetch("https://itunes.apple.com/search?media=ebook&country=de&limit=6&term=" +
+      encodeURIComponent([title, author].filter(Boolean).join(" ")));
+    if (r.ok) ((await r.json()).results || []).forEach((it) => {
+      if (it.artworkUrl100) push(it.artworkUrl100.replace(/100x100/, "600x600"), "Apple Books");
+    });
+  } catch (_) {}
+  // 5) ISBNs des Buchs selbst
+  fromIsbn(b.isbn13, b.isbn10, "ISBN");
+  return out.slice(0, 16);
+}
+
 // Gesprochenen Satz verstehen: Absicht (gelesen / lese gerade / will lesen) erkennen
 // und den eigentlichen Buchtitel aus Füllwörtern herausschälen.
 // Beispiel: "Also ich möchte Soloalbum lesen" -> { query: "Soloalbum", status: "want" }
