@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>de.florianthiel.leselog-backup</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/florian/Projects/apps/leselog/backup/leselog-backup.sh</string>
+    </array>
+    <!-- Täglich um 09:30 Uhr -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>9</integer>
+        <key>Minute</key>
+        <integer>30</integer>
+    </dict>
+    <!-- Falls der Mac um 09:30 aus war: beim nächsten Anschalten nachholen -->
+    <key>RunAtLoad</key>
+    <false/>
+    <key>StandardOutPath</key>
+    <string>/Users/florian/Leselog-Backups/backup.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/florian/Leselog-Backups/backup.log</string>
+</dict>
+</plist>
