@@ -102,7 +102,7 @@ function coverImg(b) {
   const amz = amazonCover(b);
   const src = b.cover_url || amz;
   if (!src) return "";
-  return `<img src="${esc(src)}" alt="" loading="lazy" data-amz="${esc(amz)}"` +
+  return `<img src="${esc(src)}" alt="" loading="lazy" referrerpolicy="no-referrer" data-amz="${esc(amz)}"` +
     ` onload="if(this.naturalWidth&amp;&amp;this.naturalWidth&lt;10)this.remove()"` +
     ` onerror="var a=this.dataset.amz;if(a&amp;&amp;this.src.indexOf(a)===-1){this.src=a}else{this.remove()}">`;
 }
@@ -308,7 +308,7 @@ function openSortSheet() {
   });
 }
 function bindCards() {
-  document.querySelectorAll(".book, .row-book").forEach((c) =>
+  document.querySelectorAll(".book, .row-book, .rank-row, .drop-row").forEach((c) =>
     c.onclick = () => openDetail(state.books.find((b) => b.id === c.dataset.id)));
 }
 function bookCardHTML(b) {
@@ -383,6 +383,29 @@ function yearSectionHTML(read) {
     </div>`;
 }
 
+function rankListHTML(list) {
+  return `<ol class="rank-list">${list.map((b, i) => `
+    <li class="rank-row" data-id="${b.id}">
+      <span class="rank-num">${i + 1}</span>
+      <div class="cover-wrap thumb"><div class="cover-fallback"><div class="ft">${esc(b.title)}</div></div>${coverImg(b)}</div>
+      <div class="rank-main">
+        <div class="rank-title">${esc(b.title)}</div>
+        <div class="rank-author">${esc(b.author || "Unbekannt")}</div>
+      </div>
+      <div class="rank-stars">${b.rating ? stars(b.rating) : ""}</div>
+    </li>`).join("")}</ol>`;
+}
+
+function droppedSectionHTML(dropped) {
+  const media = isMediaType(state.mediaType);
+  return `<div class="section-title">Abgebrochen${dropped.length > 1 ? ` (${dropped.length})` : ""}</div>
+    <div class="drop-list">${dropped.map((b) => `
+      <div class="drop-row" data-id="${b.id}">
+        <div class="drop-head"><span class="drop-title">${esc(b.title)}</span>${b.author ? `<span class="drop-author"> · ${esc(b.author)}</span>` : ""}</div>
+        ${b.abandon_reason ? `<div class="drop-why">„${esc(b.abandon_reason)}"</div>` : `<div class="drop-why muted">kein Grund notiert</div>`}
+      </div>`).join("")}</div>`;
+}
+
 function renderStats(main) {
   const mt = state.mediaType, media = isMediaType(mt);
   const all = state.books.filter((b) => (b.media_type || "book") === mt);
@@ -392,7 +415,10 @@ function renderStats(main) {
   const people = new Set(read.map((b) => b.author).filter(Boolean));
   const reading = all.filter((b) => b.status === "reading").length;
   const want = all.filter((b) => b.status === "want").length;
-  const top = [...read].filter((b) => b.rating >= 4).sort((a, b) => (b.rating - a.rating)).slice(0, 6);
+  const dropped = all.filter((b) => b.status === "dropped");
+  const highlights = all.filter((b) => b.highlight)
+    .sort((a, b) => (b.rating || 0) - (a.rating || 0) || (a.title || "").localeCompare(b.title || "", "de"));
+  const top = [...read].filter((b) => b.rating >= 4 && !b.highlight).sort((a, b) => (b.rating - a.rating)).slice(0, 6);
 
   const midVal = mt === "movie" ? Math.round(read.reduce((s, b) => s + (b.runtime || 0), 0) / 60)
     : mt === "series" ? read.reduce((s, b) => s + (b.total_episodes || 0), 0)
@@ -408,12 +434,17 @@ function renderStats(main) {
       <div class="stat-card"><div class="num">${people.size}</div><div class="lab">verschiedene ${peopleLab}</div></div>
       <div class="stat-card"><div class="num">${avg}</div><div class="lab">Ø Bewertung</div></div>
     </div>
-    ${(reading || want) ? `<div class="mini-counts">${reading ? `<span>📖 ${reading} ${media ? "schaue ich gerade" : "lese ich gerade"}</span>` : ""}${want ? `<span>🔖 ${want} auf der ${media ? "Will-sehen" : "Will-lesen"}-Liste</span>` : ""}</div>` : ""}
+    ${(reading || want || dropped.length) ? `<div class="mini-counts">${reading ? `<span>📖 ${reading} ${media ? "schaue ich gerade" : "lese ich gerade"}</span>` : ""}${want ? `<span>🔖 ${want} auf der ${media ? "Will-sehen" : "Will-lesen"}-Liste</span>` : ""}${dropped.length ? `<span>🚫 ${dropped.length} abgebrochen</span>` : ""}</div>` : ""}
 
     ${yearSectionHTML(read)}
 
-    ${top.length ? `<div class="section-title">Deine Favoriten</div>
+    ${highlights.length ? `<div class="section-title">★ Deine Highlights</div>
+      ${rankListHTML(highlights)}` : ""}
+
+    ${top.length ? `<div class="section-title">Weitere Favoriten</div>
       <div class="shelf">${top.map(bookCardHTML).join("")}</div>` : ""}
+
+    ${dropped.length ? droppedSectionHTML(dropped) : ""}
 
     <div class="section-title">Deine Daten</div>
     <p style="color:var(--ink-soft);font-size:13.5px;margin:-6px 0 12px">Deine Bücher gehören dir. Exportiere sie jederzeit oder hol dir eine Liste aus einer anderen App rein.</p>
@@ -842,7 +873,7 @@ async function openCoverPicker(b) {
   try { cands = await searchCovers(b); } catch (_) {}
   const grid = cands.map((c) =>
     `<button type="button" class="cover-cand" data-url="${esc(c.url)}" title="${esc(c.source)}">
-       <img src="${esc(c.url)}" loading="lazy" alt=""
+       <img src="${esc(c.url)}" loading="lazy" alt="" referrerpolicy="no-referrer"
          onload="if(this.naturalWidth&amp;&amp;this.naturalWidth&lt;10)this.closest('.cover-cand').remove()"
          onerror="this.closest('.cover-cand').remove()">
      </button>`).join("");
