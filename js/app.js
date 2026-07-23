@@ -44,6 +44,7 @@ function statusLabel(status, mt) {
 const SORTS = [
   ["added", "Zuletzt hinzugefügt"],
   ["read", "Zuletzt gelesen"],
+  ["chrono", "Chronologisch (alt → neu)"],
   ["title", "Titel (A–Z)"],
   ["author", "Autor (A–Z)"],
   ["rating", "Beste Bewertung"],
@@ -115,6 +116,7 @@ function coverHTML(b, cls = "") {
   return `<div class="cover-wrap ${cls}">${hl}${status}${fallback}${coverImg(b)}</div>`;
 }
 function stars(n) { return n ? "★".repeat(n) + "☆".repeat(5 - n) : ""; }
+function readYear(b) { return (b.date_finished || "").slice(0, 4); }
 function escPlain(s) { return esc(String(s || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim()); }
 function webRatingHTML(b) {
   if (!b.web_rating) return "";
@@ -261,12 +263,13 @@ function rowHTML(b) {
   const cov = coverImg(b);
   const st = b.status && b.status !== "read"
     ? `<span class="row-status ${b.status}">${statusLabel(b.status, b.media_type)}</span>` : "";
+  const yr = readYear(b);
   return `<div class="row-book" data-id="${b.id}">
     <div class="cover-wrap thumb"><div class="cover-fallback"><div class="ft">${esc(b.title)}</div></div>${cov}</div>
     <div class="row-main">
       <div class="row-title">${esc(b.title)}</div>
       <div class="row-author">${esc(b.author || "Unbekannt")}</div>
-      ${b.rating ? `<div class="b-stars">${stars(b.rating)}</div>` : ""}
+      <div class="b-meta">${b.rating ? `<span class="b-stars">${stars(b.rating)}</span>` : ""}${yr ? `<span class="b-year">${yr}</span>` : ""}</div>
     </div>
     ${st}
   </div>`;
@@ -285,8 +288,11 @@ function sortBooks(list) {
   const l = list.slice();
   const num = (x) => (x == null ? -Infinity : x);
   const readKey = (b) => b.date_finished || b.date_started || b.created_at || "";
+  const chronoKey = (b) => b.date_finished || b.date_started || "";
   switch (state.sort) {
     case "read":   l.sort((a, b) => readKey(b).localeCompare(readKey(a))); break;
+    case "chrono": l.sort((a, b) => { const ka = chronoKey(a), kb = chronoKey(b);
+      if (!ka) return 1; if (!kb) return -1; return ka.localeCompare(kb); }); break;
     case "title":  l.sort((a, b) => (a.title || "￿").localeCompare(b.title || "￿", "de", { sensitivity: "base" })); break;
     case "author": l.sort((a, b) => (a.author || "￿").localeCompare(b.author || "￿", "de", { sensitivity: "base" })); break;
     case "rating": l.sort((a, b) => num(b.rating) - num(a.rating)); break;
@@ -312,11 +318,12 @@ function bindCards() {
     c.onclick = () => openDetail(state.books.find((b) => b.id === c.dataset.id)));
 }
 function bookCardHTML(b) {
+  const yr = readYear(b);
   return `<div class="book" data-id="${b.id}">
     ${coverHTML(b)}
     <div class="b-title">${esc(b.title)}</div>
     <div class="b-author">${esc(b.author || "Unbekannt")}</div>
-    ${b.rating ? `<div class="b-stars">${stars(b.rating)}</div>` : ""}
+    <div class="b-meta">${b.rating ? `<span class="b-stars">${stars(b.rating)}</span>` : ""}${yr ? `<span class="b-year">${yr}</span>` : ""}</div>
   </div>`;
 }
 function emptyHTML() {
