@@ -31,7 +31,8 @@ while IFS=$'\t' read -r book_id path title; do
   object="$USER_ID/$book_id.epub"
 
   http="$(curl -sS -o /dev/null -w '%{http_code}' -X POST \
-    "$SUPABASE_URL/storage/v1/object/$object" \
+    "$SUPABASE_URL/storage/v1/object/epubs/$object" \
+    -H "apikey: $KEY" \
     -H "Authorization: Bearer $KEY" \
     -H "Content-Type: application/epub+zip" \
     -H "x-upsert: true" \
