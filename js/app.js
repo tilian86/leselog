@@ -1,7 +1,8 @@
 // Leselog – App-Steuerung
 import { CONFIG } from "./config.js";
 import { currentSession, onAuth, signInPassword, signUpPassword, signOut,
-         fetchBooks, insertBook, insertBooks, updateBook, removeBook } from "./supa.js";
+         fetchBooks, insertBook, insertBooks, updateBook, removeBook,
+         uploadEpub, epubSignedUrl, removeEpub } from "./supa.js";
 import { searchBooks, searchByISBN, guessReadingDays, parseUtterance, storeLinks, fetchExtras, searchCovers } from "./enrich.js";
 import { startDictation, hasMic } from "./audio.js";
 import { startScanner } from "./scan.js";
@@ -117,6 +118,22 @@ function coverHTML(b, cls = "") {
 }
 function stars(n) { return n ? "★".repeat(n) + "☆".repeat(5 - n) : ""; }
 function readYear(b) { return (b.date_finished || "").slice(0, 4); }
+function fmtSize(n) { if (!n) return ""; const mb = n / 1048576;
+  return mb >= 1 ? mb.toFixed(1) + " MB" : Math.max(1, Math.round(n / 1024)) + " KB"; }
+function epubBoxHTML(b) {
+  if (b.epub_path) {
+    return `<div class="epub-has">
+      <div class="epub-file">📎 <span>${esc(b.epub_name || "Buch.epub")}</span>${b.epub_size ? `<span class="epub-size">${fmtSize(b.epub_size)}</span>` : ""}</div>
+      <div class="epub-actions">
+        <button type="button" class="btn sm" id="epubDl">Herunterladen</button>
+        <button type="button" class="btn sm" id="epubShare">Teilbarer Link</button>
+        <button type="button" class="btn sm ghost" id="epubDel">Entfernen</button>
+      </div>
+    </div>`;
+  }
+  return `<button type="button" class="btn block" id="epubAdd">📎 EPUB anhängen</button>
+    <div class="epub-hint">Optional, fürs Archiv. Nur du hast Zugriff – teilen kannst du später per Link (30 Tage gültig).</div>`;
+}
 function escPlain(s) { return esc(String(s || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim()); }
 function webRatingHTML(b) {
   if (!b.web_rating) return "";
@@ -837,6 +854,13 @@ function bookFormHTML(b, isNew) {
       <textarea class="input" id="f_notes" placeholder="Was ist dir geblieben?">${esc(b.notes || "")}</textarea></label>
     <input type="hidden" id="f_isbn" value="${esc(b.isbn13 || "")}">
 
+    ${(!isNew && mt === "book") ? `
+    <div class="fld">
+      <span class="lbl">EPUB-Anhang</span>
+      <div class="epub-box" id="epubBox">${epubBoxHTML(b)}</div>
+      <input type="file" id="epubFile" accept=".epub,application/epub+zip" hidden>
+    </div>` : ""}
+
     ${missingWhen && !media ? `<div class="hint">${I.info}<span>Magst du noch ergänzen, <b>wann</b> du es gelesen hast und <b>wie lange</b> du gebraucht hast? (optional)</span></div>` : ""}
 
     <div class="sheet-actions">
@@ -919,12 +943,67 @@ async function openCoverPicker(b) {
   });
 }
 
+function bindEpub(b) {
+  const box = $("#epubBox"); if (!box) return;
+  const refresh = () => { box.innerHTML = epubBoxHTML(b); bindEpub(b); };
+  const syncState = (patch) => { Object.assign(b, patch);
+    const i = state.books.findIndex((x) => x.id === b.id); if (i > -1) Object.assign(state.books[i], patch); };
+  const fileInp = $("#epubFile");
+
+  const add = $("#epubAdd");
+  if (add) add.onclick = () => fileInp.click();
+  if (fileInp) fileInp.onchange = async () => {
+    const f = fileInp.files[0]; if (!f) return;
+    if (f.size > 26214400) return toast("Datei zu groß (max. 25 MB)");
+    if (DEMO) return toast("(Demo) Upload nicht möglich");
+    const prev = box.innerHTML;
+    box.innerHTML = `<div class="epub-uploading"><span class="spin dark"></span> lädt hoch …</div>`;
+    try {
+      const path = await uploadEpub(b.id, f);
+      const patch = { epub_path: path, epub_name: f.name, epub_size: f.size };
+      await updateBook(b.id, patch); syncState(patch);
+      toast("EPUB angehängt 📎"); refresh();
+    } catch (e) { console.error(e); box.innerHTML = prev; bindEpub(b); toast(e.message || "Upload fehlgeschlagen"); }
+  };
+
+  const dl = $("#epubDl");
+  if (dl) dl.onclick = async () => {
+    dl.disabled = true;
+    try { window.location.href = await epubSignedUrl(b.epub_path, 3600, true); }
+    catch (e) { toast("Download fehlgeschlagen"); }
+    dl.disabled = false;
+  };
+
+  const share = $("#epubShare");
+  if (share) share.onclick = async () => {
+    share.disabled = true;
+    try {
+      const url = await epubSignedUrl(b.epub_path, 60 * 60 * 24 * 30);
+      try { await navigator.clipboard.writeText(url); toast("Link kopiert – 30 Tage gültig"); }
+      catch (_) { prompt("Teilbarer Link (30 Tage gültig):", url); }
+    } catch (e) { toast("Link fehlgeschlagen"); }
+    share.disabled = false;
+  };
+
+  const del = $("#epubDel");
+  if (del) del.onclick = async () => {
+    if (!confirm("EPUB-Anhang wirklich entfernen?")) return;
+    try {
+      await removeEpub(b.epub_path);
+      const patch = { epub_path: null, epub_name: null, epub_size: null };
+      await updateBook(b.id, patch); syncState(patch);
+      toast("Entfernt"); refresh();
+    } catch (e) { toast("Entfernen fehlgeschlagen"); }
+  };
+}
+
 function bindForm(b, isNew) {
   const draft = { ...b };
   draft.status = draft.status || "read";
   draft.rating = draft.rating || 0;
   draft.highlight = !!draft.highlight;
   bindKlappentext();
+  bindEpub(b);
 
   const coverBtn = $("#coverBtn");
   if (coverBtn) coverBtn.onclick = () => openCoverPicker(b);

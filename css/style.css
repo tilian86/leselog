@@ -265,6 +265,19 @@ a { color: var(--accent); }
 .btn.ghost { background: transparent; }
 .btn.block { width: 100%; }
 .btn.danger { color: #b02a2a; }
+.btn.sm { padding: 8px 12px; font-size: 13px; border-radius: 10px; }
+
+/* ---------------- EPUB-Anhang ---------------- */
+.epub-box { margin-top: 6px; }
+.epub-hint { font-size: 12.5px; color: var(--ink-soft); margin-top: 7px; line-height: 1.4; }
+.epub-has { background: var(--paper-2); border: 1px solid var(--line); border-radius: 12px; padding: 12px 13px; }
+.epub-file { display: flex; align-items: center; gap: 7px; font-size: 14px; font-weight: 600; }
+.epub-file span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.epub-size { font-weight: 400; color: var(--ink-soft); font-size: 12.5px; flex-shrink: 0; }
+.epub-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 11px; }
+.epub-actions .btn.sm { flex: 1 1 auto; }
+.epub-uploading { display: flex; align-items: center; gap: 9px; padding: 13px; color: var(--ink-soft);
+  background: var(--paper-2); border: 1px solid var(--line); border-radius: 12px; font-size: 14px; }
 .secondary-row { display: flex; gap: 10px; margin-top: 14px; }
 .secondary-row .btn { flex: 1; }
 

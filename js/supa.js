@@ -84,3 +84,30 @@ export async function removeBook(id) {
   const { error } = await supa.from("books").delete().eq("id", id);
   if (error) throw error;
 }
+
+// ---------- EPUB-Anhänge (privater Storage-Bucket) ----------
+async function uid() {
+  const { data } = await supa.auth.getUser();
+  return data.user && data.user.id;
+}
+
+export async function uploadEpub(bookId, file) {
+  const path = `${await uid()}/${bookId}.epub`;
+  const { error } = await supa.storage.from("epubs")
+    .upload(path, file, { upsert: true, contentType: "application/epub+zip" });
+  if (error) throw error;
+  return path;
+}
+
+// Signierter Link. expiresSec: 3600 = 1 Std (eigener Download), 30 Tage = Teilen.
+export async function epubSignedUrl(path, expiresSec = 3600, download = false) {
+  const opts = download ? { download: true } : undefined;
+  const { data, error } = await supa.storage.from("epubs").createSignedUrl(path, expiresSec, opts);
+  if (error) throw error;
+  return data.signedUrl;
+}
+
+export async function removeEpub(path) {
+  const { error } = await supa.storage.from("epubs").remove([path]);
+  if (error) throw error;
+}
