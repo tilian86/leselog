@@ -66,3 +66,48 @@ export function tmdbUrl(b) {
   const kind = b.media_type === "series" ? "tv" : "movie";
   return b.tmdb_id ? `https://www.themoviedb.org/${kind}/${b.tmdb_id}` : null;
 }
+
+// ---------- Wo läuft's? (Streaming-Anbieter, Daten von JustWatch über TMDb) ----------
+const LOGO = "https://image.tmdb.org/t/p/w92";
+const provCache = new Map();
+
+export async function getWatchProviders(tmdbId, media, region = "DE") {
+  if (!tmdbId) return null;
+  const key = `${media}:${tmdbId}:${region}`;
+  if (provCache.has(key)) return provCache.get(key);
+  let out = null;
+  try {
+    const res = await fetch(q("/" + tvOrMovie(media) + "/" + tmdbId + "/watch/providers"));
+    if (res.ok) {
+      const r = (await res.json()).results || {};
+      const d = r[region];
+      if (d) {
+        const map = (arr) => (arr || []).map((p) => ({
+          name: p.provider_name,
+          logo: p.logo_path ? LOGO + p.logo_path : null,
+        }));
+        out = {
+          flatrate: map(d.flatrate),      // im Abo enthalten
+          free: map(d.free),              // wirklich gratis
+          ads: map(d.ads),                // gratis mit Werbung
+          rent: map(d.rent), buy: map(d.buy),
+          link: d.link || null,
+        };
+      } else {
+        out = { flatrate: [], free: [], ads: [], rent: [], buy: [], link: null };
+      }
+    }
+  } catch (_) { out = null; }
+  provCache.set(key, out);
+  return out;
+}
+
+// Kurzfassung für Kachel/Zeile: nur die kostenfreien Wege
+export function freeProviderNames(wp) {
+  if (!wp) return [];
+  const seen = new Set(), out = [];
+  [...(wp.free || []), ...(wp.ads || []), ...(wp.flatrate || [])].forEach((p) => {
+    if (!seen.has(p.name)) { seen.add(p.name); out.push(p.name); }
+  });
+  return out;
+}

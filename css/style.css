@@ -267,6 +267,29 @@ a { color: var(--accent); }
 .btn.danger { color: #b02a2a; }
 .btn.sm { padding: 8px 12px; font-size: 13px; border-radius: 10px; }
 
+/* ---------------- Wo läuft's? (Streaming) ---------------- */
+.watch-box { margin-top: 6px; background: var(--paper-2); border: 1px solid var(--line);
+  border-radius: 12px; padding: 12px 13px; font-size: 14px; color: var(--ink-soft);
+  display: flex; flex-direction: column; gap: 10px; }
+.watch-grp { display: flex; flex-direction: column; gap: 6px; }
+.watch-lab { font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px;
+  color: var(--ink-soft); }
+.watch-lab.free { color: #2f7d4f; }
+.prov-row { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; }
+.prov img { width: 34px; height: 34px; border-radius: 8px; display: block; object-fit: cover;
+  box-shadow: var(--shadow-sm); }
+.prov-txt { font-size: 12.5px; padding: 5px 9px; border-radius: 8px;
+  background: var(--paper); border: 1px solid var(--line); color: var(--ink); }
+.watch-none { font-size: 13.5px; line-height: 1.4; }
+.watch-link { font-size: 13px; font-weight: 600; color: var(--accent); }
+.watch-src { font-size: 11px; opacity: .6; }
+
+/* Kurzhinweis auf Kachel/Zeile */
+.watch-hint { font-size: 11.5px; color: var(--ink-soft); margin: 3px 2px 0; min-height: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.watch-hint.has { color: #2f7d4f; font-weight: 600; }
+.watch-hint.muted { opacity: .6; }
+
 /* ---------------- EPUB-Anhang ---------------- */
 .epub-box { margin-top: 6px; }
 .epub-hint { font-size: 12.5px; color: var(--ink-soft); margin-top: 7px; line-height: 1.4; }

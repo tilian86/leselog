@@ -8,7 +8,7 @@ import { startDictation, hasMic } from "./audio.js";
 import { startScanner } from "./scan.js";
 import { readEpubMeta } from "./epub.js";
 import { booksToCSV, booksToJSON, download, parseImportFile } from "./io.js";
-import { searchMedia, getMediaDetails, tmdbUrl } from "./tmdb.js";
+import { searchMedia, getMediaDetails, tmdbUrl, getWatchProviders, freeProviderNames } from "./tmdb.js";
 
 // ---------------- Icons ----------------
 const I = {
@@ -120,6 +120,29 @@ function stars(n) { return n ? "★".repeat(n) + "☆".repeat(5 - n) : ""; }
 function readYear(b) { return (b.date_finished || "").slice(0, 4); }
 function fmtSize(n) { if (!n) return ""; const mb = n / 1048576;
   return mb >= 1 ? mb.toFixed(1) + " MB" : Math.max(1, Math.round(n / 1024)) + " KB"; }
+function provRowHTML(list, cls) {
+  return `<div class="prov-row ${cls}">${list.map((p) => `
+    <span class="prov" title="${esc(p.name)}">${p.logo
+      ? `<img src="${esc(p.logo)}" alt="${esc(p.name)}" loading="lazy">`
+      : `<span class="prov-txt">${esc(p.name)}</span>`}</span>`).join("")}</div>`;
+}
+
+function watchBoxHTML(wp) {
+  if (!wp) return `<div class="watch-none">Streaming-Infos gerade nicht abrufbar.</div>`;
+  const gratis = [...(wp.free || []), ...(wp.ads || [])];
+  const abo = wp.flatrate || [];
+  const nurKauf = !gratis.length && !abo.length && ((wp.rent || []).length || (wp.buy || []).length);
+
+  let html = "";
+  if (gratis.length) html += `<div class="watch-grp"><div class="watch-lab free">Gratis${(wp.ads || []).length && !(wp.free || []).length ? " (mit Werbung)" : ""}</div>${provRowHTML(gratis, "")}</div>`;
+  if (abo.length) html += `<div class="watch-grp"><div class="watch-lab">Im Abo enthalten</div>${provRowHTML(abo, "")}</div>`;
+  if (nurKauf) html += `<div class="watch-none">Aktuell nirgends im Abo – nur leihen oder kaufen.</div>`;
+  if (!html) html = `<div class="watch-none">Derzeit in Deutschland nicht im Stream verfügbar.</div>`;
+  if (wp.link) html += `<a class="watch-link" href="${esc(wp.link)}" target="_blank" rel="noopener">Alle Anbieter ansehen ↗</a>`;
+  html += `<div class="watch-src">Quelle: JustWatch · Region Deutschland</div>`;
+  return html;
+}
+
 function epubBoxHTML(b) {
   if (b.epub_path) {
     return `<div class="epub-has">
@@ -287,6 +310,7 @@ function rowHTML(b) {
       <div class="row-title">${esc(b.title)}</div>
       <div class="row-author">${esc(b.author || "Unbekannt")}</div>
       <div class="b-meta">${b.rating ? `<span class="b-stars">${stars(b.rating)}</span>` : ""}${yr ? `<span class="b-year">${yr}</span>` : ""}</div>
+      ${watchHintHTML(b)}
     </div>
     ${st}
   </div>`;
@@ -333,6 +357,28 @@ function openSortSheet() {
 function bindCards() {
   document.querySelectorAll(".book, .row-book, .rank-row, .drop-row").forEach((c) =>
     c.onclick = () => openDetail(state.books.find((b) => b.id === c.dataset.id)));
+  fillWatchHints();
+}
+
+// „Wo läuft's?“ als kurze Zeile unter vorgemerkten Filmen/Serien
+async function fillWatchHints() {
+  const slots = [...document.querySelectorAll(".watch-hint[data-tmdb]")].slice(0, 12);
+  for (const el of slots) {
+    const wp = await getWatchProviders(el.dataset.tmdb, el.dataset.mt);
+    if (!document.body.contains(el)) continue;
+    const names = freeProviderNames(wp);
+    if (names.length) {
+      el.textContent = "▶ " + names.slice(0, 3).join(", ") + (names.length > 3 ? " +" + (names.length - 3) : "");
+      el.classList.add("has");
+    } else if (wp) {
+      el.textContent = "▶ nicht im Abo";
+      el.classList.add("muted");
+    }
+  }
+}
+function watchHintHTML(b) {
+  return (isMediaType(b.media_type) && b.tmdb_id && (b.status || "read") === "want")
+    ? `<div class="watch-hint" data-tmdb="${b.tmdb_id}" data-mt="${b.media_type}"></div>` : "";
 }
 function bookCardHTML(b) {
   const yr = readYear(b);
@@ -341,6 +387,7 @@ function bookCardHTML(b) {
     <div class="b-title">${esc(b.title)}</div>
     <div class="b-author">${esc(b.author || "Unbekannt")}</div>
     <div class="b-meta">${b.rating ? `<span class="b-stars">${stars(b.rating)}</span>` : ""}${yr ? `<span class="b-year">${yr}</span>` : ""}</div>
+    ${watchHintHTML(b)}
   </div>`;
 }
 function emptyHTML() {
@@ -825,6 +872,10 @@ function bookFormHTML(b, isNew) {
       </div>
     </div>
     ${links}
+    ${(media && b.tmdb_id) ? `<div class="fld">
+      <span class="lbl">Wo läuft's?</span>
+      <div class="watch-box" id="watchBox"><span class="spin dark"></span> wird geprüft …</div>
+    </div>` : ""}
     <div id="klappentext">${klappentextHTML(b)}</div>
 
     <div class="status-pick" id="statusPick">
@@ -879,10 +930,20 @@ async function openReview(b) {
   Object.assign(b, ex);
   openSheet(bookFormHTML(b, true));
   bindForm(b, true);
+  loadWatchBox(b);
 }
+async function loadWatchBox(b) {
+  const box = $("#watchBox");
+  if (!box || !isMediaType(b.media_type) || !b.tmdb_id) return;
+  const wp = await getWatchProviders(b.tmdb_id, b.media_type);
+  const still = $("#watchBox");
+  if (still) still.innerHTML = watchBoxHTML(wp);
+}
+
 async function openDetail(b) {
   openSheet(bookFormHTML(b, false));   // vorhandenes Buch sofort zeigen
   bindForm(b, false);
+  loadWatchBox(b);                      // Streaming-Anbieter im Hintergrund holen
   const ex = await getExtras(b);        // fehlende Infos im Hintergrund nachtragen
   if (ex && (ex.description || ex.web_rating != null)) {
     Object.assign(b, ex);
