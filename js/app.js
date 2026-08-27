@@ -263,10 +263,11 @@ function renderMain() {
 
   if (state.view === "stats") return renderStats(main);
 
-  const filters = [["all", "Alle"], ["read", statusLabel("read")], ["reading", statusLabel("reading")],
+  const filters = [["all", "Übersicht"], ["read", statusLabel("read")], ["reading", statusLabel("reading")],
     ["want", statusLabel("want")], ["dropped", statusLabel("dropped")], ["highlight", "★ Highlights"]];
-  const counts = { all: mediaBooks.length, read: 0, reading: 0, want: 0, dropped: 0, highlight: 0 };
+  const counts = { all: 0, read: 0, reading: 0, want: 0, dropped: 0, highlight: 0 };
   mediaBooks.forEach((b) => { const s = b.status || "read"; if (counts[s] != null) counts[s]++;
+    if (OVERVIEW_STATUS.includes(s)) counts.all++;
     if (b.highlight) counts.highlight++; });
   const list = liveList();
 
@@ -319,7 +320,8 @@ function rowHTML(b) {
 function liveList() {
   let list = state.books.filter((b) => (b.media_type || "book") === state.mediaType);
   if (state.filter === "highlight") list = list.filter((b) => b.highlight);
-  else if (state.filter !== "all") list = list.filter((b) => (b.status || "read") === state.filter);
+  else if (state.filter === "all") list = list.filter((b) => OVERVIEW_STATUS.includes(b.status || "read"));
+  else list = list.filter((b) => (b.status || "read") === state.filter);
   if (state.search) { const q = state.search.toLowerCase();
     list = list.filter((b) => (b.title + " " + (b.author || "")).toLowerCase().includes(q)); }
   return sortBooks(list);
@@ -812,6 +814,8 @@ function showCandidates(results, parsed) {
 // ================================================================
 //  Review / Formular (neu ODER bearbeiten)
 // ================================================================
+// In der Übersicht („Alle") bewusst ohne Will-lesen/Abgebrochen – die haben eigene Reiter.
+const OVERVIEW_STATUS = ["read", "reading"];
 const STATUS_KEYS = ["read", "reading", "want", "dropped"];
 
 function bookFormHTML(b, isNew) {
