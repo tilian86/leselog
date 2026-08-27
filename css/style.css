@@ -525,3 +525,6 @@ textarea.input { resize: vertical; min-height: 70px; line-height: 1.5; }
 .cover-manual a { color: var(--accent-2); }
 .cover-manual-row { display: flex; gap: 8px; margin-top: 8px; }
 .cover-manual-row .input { flex: 1; min-width: 0; }
+
+/* Originaltitel bei uebersetzten Ausgaben */
+.orig-title { font-style: italic; opacity: .85; }

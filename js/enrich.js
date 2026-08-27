@@ -44,6 +44,8 @@ function normalizeVolume(item) {
 // Sprache grob aus Klappentext/Titel raten – damit der Anna's-Archive-Filter
 // nicht auf "deutsch" steht, wenn es das Buch nur auf Englisch gibt.
 function guessLang(b) {
+  // Steht ein Originaltitel drin, ist der Eintrag bewusst die deutsche Ausgabe.
+  if (b.original_title) return "de";
   const t = ((b.description || "") + " " + (b.title || "") + " " + (b.publisher || "")).toLowerCase();
   if (t.trim().length < 25) return null;
   const de = (t.match(/\b(der|die|das|und|nicht|ist|eine|sich|auch|von|dem|den|mit|f\u00fcr|\u00fcber)\b/g) || []).length;

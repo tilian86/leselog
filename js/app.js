@@ -829,7 +829,7 @@ function bookFormHTML(b, isNew) {
     ? `${b.total_seasons ? b.total_seasons + " Staffeln" : ""}${b.total_episodes ? " · " + b.total_episodes + " Folgen" : ""}`
     : mt === "movie"
     ? `${b.runtime ? b.runtime + " Min." : ""}`
-    : `${b.page_count ? b.page_count + " Seiten<br>" : ""}${b.publisher ? esc(b.publisher) + "<br>" : ""}${b.isbn13 ? "ISBN " + esc(b.isbn13) : ""}`;
+    : `${b.page_count ? b.page_count + " Seiten<br>" : ""}${b.publisher ? esc(b.publisher) + "<br>" : ""}${b.original_title ? `<span class="orig-title">Original: ${esc(b.original_title)}</span><br>` : ""}${b.isbn13 ? "ISBN " + esc(b.isbn13) : ""}`;
 
   const links = media
     ? (b.tmdb_id ? `<div class="store-links"><a href="${esc(tmdbUrl(b))}" target="_blank" rel="noopener">Auf TMDb ansehen ↗</a></div>` : "")
