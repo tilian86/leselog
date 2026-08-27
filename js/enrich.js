@@ -45,6 +45,10 @@ export function storeLinks(b) {
   const isbn = b.isbn13 || b.isbn10 || "";
   const term = encodeURIComponent([b.title, b.author].filter(Boolean).join(" ") || isbn);
   const links = [];
+  // Anna's Archive: bei ISBN gezielt danach suchen, sonst Titel + Autor.
+  // Domain wechselt gelegentlich -> in config.js anpassbar.
+  const aa = (CONFIG.ANNAS_ARCHIVE_URL || "https://annas-archive.org").replace(/\/+$/, "");
+  links.push({ name: "Anna\u2019s Archive", url: aa + "/search?q=" + (isbn ? encodeURIComponent(isbn) : term) });
   links.push({ name: "Amazon", url: b.isbn10
     ? "https://www.amazon.de/dp/" + b.isbn10
     : "https://www.amazon.de/s?k=" + (isbn || term) + "&i=stripbooks" });
