@@ -9,6 +9,7 @@ import { startScanner } from "./scan.js";
 import { readEpubMeta } from "./epub.js";
 import { booksToCSV, booksToJSON, download, parseImportFile } from "./io.js";
 import { searchMedia, getMediaDetails, tmdbUrl, getWatchProviders, freeProviderNames } from "./tmdb.js";
+import { findGermanEdition } from "./dnb.js";
 
 // ---------------- Icons ----------------
 const I = {
@@ -876,6 +877,7 @@ function bookFormHTML(b, isNew) {
       </div>
     </div>
     ${links}
+    ${mt === "book" ? `<div id="germanHint"></div>` : ""}
     ${(media && b.tmdb_id) ? `<div class="fld">
       <span class="lbl">Wo läuft's?</span>
       <div class="watch-box" id="watchBox"><span class="spin dark"></span> wird geprüft …</div>
@@ -908,6 +910,7 @@ function bookFormHTML(b, isNew) {
     <label class="fld"><span class="lbl">Notizen / Gedanken</span>
       <textarea class="input" id="f_notes" placeholder="Was ist dir geblieben?">${esc(b.notes || "")}</textarea></label>
     <input type="hidden" id="f_isbn" value="${esc(b.isbn13 || "")}">
+    <input type="hidden" id="f_origtitle" value="${esc(b.original_title || "")}">
 
     ${(!isNew && mt === "book") ? `
     <div class="fld">
@@ -935,7 +938,43 @@ async function openReview(b) {
   openSheet(bookFormHTML(b, true));
   bindForm(b, true);
   loadWatchBox(b);
+  loadGermanHint(b);
 }
+// Prüft bei englischen Büchern, ob es eine deutsche Ausgabe gibt, und fragt nach.
+async function loadGermanHint(b) {
+  const box = $("#germanHint");
+  if (!box || (b.media_type || "book") !== "book" || b.original_title) return;
+  // Keine Sprach-Vorpruefung: Beim Anlegen fehlt oft noch der Klappentext.
+  // Die DNB-Suche filtert selbst – sie liefert nur dann etwas, wenn der
+  // Originaltitel im Katalog passt UND der deutsche Titel ein anderer ist.
+
+  let hit = null;
+  try { hit = await findGermanEdition(b.title, b.author); } catch (_) { return; }
+  if (!hit || !$("#germanHint")) return;
+
+  const voll = hit.titel + (hit.zusatz ? " – " + hit.zusatz.replace(/[\s/:]+$/, "") : "");
+  $("#germanHint").innerHTML = `
+    <div class="de-hint">
+      <div class="de-hint-txt">Es gibt eine deutsche Ausgabe:<br>
+        <b>${esc(voll)}</b>${hit.jahr ? ` <span class="de-hint-jahr">(${esc(hit.jahr)})</span>` : ""}</div>
+      <div class="de-hint-actions">
+        <button type="button" class="btn sm primary" id="deSwitch">Umstellen</button>
+        <button type="button" class="btn sm ghost" id="deKeep">Englisch lassen</button>
+      </div>
+    </div>`;
+  $("#deKeep").onclick = () => { $("#germanHint").innerHTML = ""; };
+  $("#deSwitch").onclick = () => {
+    const t = $("#f_title"); if (t) t.value = voll;
+    const o = $("#f_origtitle"); if (o) o.value = b.title;
+    if (hit.isbn && hit.isbn.length === 13) { const i = $("#f_isbn"); if (i) i.value = hit.isbn; }
+    if (hit.verlag) { const v = $("#f_pub"); if (v) v.value = hit.verlag.replace(/[\s,]+$/, ""); }
+    if (hit.jahr) { const j = ($("#f_year")); const m = String(hit.jahr).match(/\d{4}/);
+      if (j && m) j.value = m[0]; }
+    $("#germanHint").innerHTML = `<div class="de-hint done">Auf die deutsche Ausgabe umgestellt ✓</div>`;
+    toast("Deutsche Ausgabe übernommen");
+  };
+}
+
 async function loadWatchBox(b) {
   const box = $("#watchBox");
   if (!box || !isMediaType(b.media_type) || !b.tmdb_id) return;
@@ -948,6 +987,7 @@ async function openDetail(b) {
   openSheet(bookFormHTML(b, false));   // vorhandenes Buch sofort zeigen
   bindForm(b, false);
   loadWatchBox(b);                      // Streaming-Anbieter im Hintergrund holen
+  loadGermanHint(b);                    // ggf. deutsche Ausgabe vorschlagen
   const ex = await getExtras(b);        // fehlende Infos im Hintergrund nachtragen
   if (ex && (ex.description || ex.web_rating != null)) {
     Object.assign(b, ex);
@@ -1130,6 +1170,7 @@ function bindForm(b, isNew) {
       rec.page_count = int("f_pages");
       rec.publisher = val("f_pub").trim() || null;
       rec.isbn13 = val("f_isbn") || draft.isbn13 || null;
+      rec.original_title = val("f_origtitle") || draft.original_title || null;
     }
     if (!rec.title) return toast("Titel fehlt");
     saveBtn.innerHTML = '<span class="spin"></span>'; saveBtn.disabled = true;

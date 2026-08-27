@@ -528,3 +528,11 @@ textarea.input { resize: vertical; min-height: 70px; line-height: 1.5; }
 
 /* Originaltitel bei uebersetzten Ausgaben */
 .orig-title { font-style: italic; opacity: .85; }
+
+/* Hinweis auf eine deutsche Ausgabe */
+.de-hint { background: rgba(176,130,63,0.12); border: 1px solid rgba(176,130,63,0.35);
+  border-radius: 12px; padding: 12px 13px; margin-top: 12px; font-size: 14px; line-height: 1.45; }
+.de-hint-jahr { color: var(--ink-soft); font-weight: 400; }
+.de-hint-actions { display: flex; gap: 8px; margin-top: 11px; }
+.de-hint-actions .btn { flex: 1; }
+.de-hint.done { color: #2f7d4f; font-weight: 600; }

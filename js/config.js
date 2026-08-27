@@ -21,6 +21,10 @@ export const CONFIG = {
   ANNAS_ARCHIVE_URL: "https://annas-archive.gl",
   ANNAS_ARCHIVE_MIRRORS: ["https://annas-archive.gl", "https://annas-archive.pk", "https://annas-archive.gd"],
 
+  // Vermittler für die Deutsche Nationalbibliothek (CORS). Findet zu englischen
+  // Büchern die deutsche Ausgabe. Quelltext in worker-dnb/.
+  DNB_PROXY_URL: "https://leselog-dnb.florian-s-thiel.workers.dev/",
+
   // App-Meta
   APP_NAME: "Leselog",
 };
