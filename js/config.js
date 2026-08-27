@@ -14,9 +14,12 @@ export const CONFIG = {
   // Solange leer: das iPhone transkribiert selbst (Offline-Notnagel).
   TRANSCRIBE_URL: "",
 
-  // Anna's Archive – Domain wechselt gelegentlich (.org / .se / .li).
-  // Wenn der Link mal ins Leere geht: hier die aktuelle Adresse eintragen.
-  ANNAS_ARCHIVE_URL: "https://annas-archive.org",
+  // Anna's Archive – Domain wechselt gelegentlich.
+  // Stand 29.07.2026 erreichbar: .gl, .pk, .gd  (.org und .se werden vom DNS geblockt).
+  // Aktuellen Status prüfen: https://open-slum.org
+  // Wenn der Link mal ins Leere geht: hier auf einen der Ersatzspiegel wechseln.
+  ANNAS_ARCHIVE_URL: "https://annas-archive.gl",
+  ANNAS_ARCHIVE_MIRRORS: ["https://annas-archive.gl", "https://annas-archive.pk", "https://annas-archive.gd"],
 
   // App-Meta
   APP_NAME: "Leselog",
