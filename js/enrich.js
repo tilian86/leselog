@@ -41,6 +41,18 @@ function normalizeVolume(item) {
 }
 
 // Links zu Buchhandlungen (Osiander direkt per ISBN, Thalia-Suche, Amazon)
+// Sprache grob aus Klappentext/Titel raten – damit der Anna's-Archive-Filter
+// nicht auf "deutsch" steht, wenn es das Buch nur auf Englisch gibt.
+function guessLang(b) {
+  const t = ((b.description || "") + " " + (b.title || "") + " " + (b.publisher || "")).toLowerCase();
+  if (t.trim().length < 25) return null;
+  const de = (t.match(/\b(der|die|das|und|nicht|ist|eine|sich|auch|von|dem|den|mit|f\u00fcr|\u00fcber)\b/g) || []).length;
+  const en = (t.match(/\b(the|and|of|is|to|a|in|that|with|for|this|his|her)\b/g) || []).length;
+  if (de >= 3 && de > en) return "de";
+  if (en >= 3 && en > de) return "en";
+  return null;
+}
+
 export function storeLinks(b) {
   const isbn = b.isbn13 || b.isbn10 || "";
   const term = encodeURIComponent([b.title, b.author].filter(Boolean).join(" ") || isbn);
@@ -48,7 +60,10 @@ export function storeLinks(b) {
   // Anna's Archive: bei ISBN gezielt danach suchen, sonst Titel + Autor.
   // Domain wechselt gelegentlich -> in config.js anpassbar.
   const aa = (CONFIG.ANNAS_ARCHIVE_URL || "https://annas-archive.org").replace(/\/+$/, "");
-  links.push({ name: "Anna\u2019s Archive", url: aa + "/search?q=" + (isbn ? encodeURIComponent(isbn) : term) });
+  const lang = guessLang(b);
+  const aaq = "/search?q=" + (isbn ? encodeURIComponent(isbn) : term)
+    + "&ext=epub" + (lang ? "&lang=" + lang : "");
+  links.push({ name: "Anna\u2019s Archive", url: aa + aaq });
   links.push({ name: "Amazon", url: b.isbn10
     ? "https://www.amazon.de/dp/" + b.isbn10
     : "https://www.amazon.de/s?k=" + (isbn || term) + "&i=stripbooks" });
