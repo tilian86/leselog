@@ -16,6 +16,10 @@ def log(msg):
     print(f"{datetime.now():%Y-%m-%d %H:%M}  {msg}", flush=True)
 
 def skey():
+    # Auf dem Funk-Server steht der Key in ~/.leselog.env, auf dem Mac im Schlüsselbund.
+    import os
+    if os.environ.get("LESELOG_SERVICE_KEY"):
+        return os.environ["LESELOG_SERVICE_KEY"]
     return subprocess.check_output(
         ["security","find-generic-password","-s","leselog-service-key","-a","leselog","-w"]
     ).decode().strip()

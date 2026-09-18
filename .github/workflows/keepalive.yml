@@ -1,25 +1,45 @@
 name: Supabase Keep-Alive
 
 # Verhindert das automatische Pausieren des Free-Tier-Projekts.
-# Supabase pausiert nach 7 Tagen ohne DB-Aktivität – dieser Job schickt
-# alle 2 Tage eine winzige Abfrage an die REST-API (= echte DB-Aktivität).
+#
+# Lektion vom 18.09.2026: Der alte Job schickte alle 2 Tage EINEN
+# Lesezugriff. Der lief sauber durch (HTTP 200) – und Supabase hat das
+# Projekt trotzdem pausiert. Ein Leseversuch, den RLS auf eine leere
+# Antwort reduziert, zaehlt dort nicht als "ausreichende Aktivitaet".
+#
+# Darum jetzt: taeglich, und mit einem echten SCHREIBzugriff
+# (RPC keepalive_ping schreibt einen Zeitstempel). Das erzeugt WAL und
+# ist damit unbestreitbar Datenbank-Aktivitaet.
+#
+# Absichtlich ohne Geheimnis: keepalive_ping ist eine security-definer-
+# Funktion, die NUR eine feste Zeile anfassen kann. Der oeffentliche
+# Publishable-Key steht sowieso im Browser-Code.
+#
+# Zweite, unabhaengige Sicherung laeuft auf dem Funk-Server
+# (~/bin/leselog-keepalive.sh, taeglich 16:23) – GitHubs Zeitplan wird
+# unter Last gerne stundenlang verschleppt oder ganz uebersprungen.
 
 on:
   schedule:
-    - cron: "0 6 */2 * *"   # alle 2 Tage um 06:00 UTC
-  workflow_dispatch:          # erlaubt manuelles Auslösen im Actions-Tab
+    - cron: "23 4 * * *"   # taeglich; krumme Minute = weniger Verzug
+  workflow_dispatch:        # erlaubt manuelles Ausloesen im Actions-Tab
 
 jobs:
   ping:
     runs-on: ubuntu-latest
     steps:
-      - name: Datenbank anpingen
+      - name: Datenbank anpingen (Schreibzugriff)
         run: |
-          code=$(curl -s -o /dev/null -w "%{http_code}" \
-            "https://wejvvldovywrernuujgt.supabase.co/rest/v1/books?select=id&limit=1" \
-            -H "apikey: sb_publishable_ZyFVdlb-Kxuvo6T5SJ43cw_I5l6LBTz")
-          echo "Supabase antwortete mit HTTP $code"
+          URL="https://wejvvldovywrernuujgt.supabase.co"
+          KEY="sb_publishable_ZyFVdlb-Kxuvo6T5SJ43cw_I5l6LBTz"
+          out=$(curl -sS -X POST "$URL/rest/v1/rpc/keepalive_ping" \
+            -H "apikey: $KEY" \
+            -H "Content-Type: application/json" \
+            -d '{}' -w $'\n%{http_code}')
+          code=$(printf '%s' "$out" | tail -n1)
+          body=$(printf '%s' "$out" | sed '$d')
+          echo "HTTP $code – Antwort: $body"
           if [ "$code" != "200" ]; then
-            echo "Unerwarteter Status – Ping fehlgeschlagen."
+            echo "::error::Keep-Alive fehlgeschlagen (HTTP $code). Projekt pausiert?"
             exit 1
           fi
