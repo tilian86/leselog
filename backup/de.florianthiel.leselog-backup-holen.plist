@@ -9,14 +9,16 @@
         <string>/bin/bash</string>
         <string>/Users/florian/Projects/apps/leselog/backup/leselog-backup-holen.sh</string>
     </array>
-    <!-- Täglich um 10:15 Uhr, nach dem Server-Backup um 09:30.
+    <!-- Nachts um 02:30 Uhr: Hintergrundarbeit läuft nicht tagsüber, wenn am Mac gearbeitet wird.
+         Holt den Stand vom Server-Backup des Vortags (09:30) und läuft vor der
+         Sonntags-Sicherung um 03:00, die ihn dann frisch nach Dropbox mitnimmt.
          Schläft der Mac um diese Zeit, holt launchd den Lauf beim Aufwachen nach. -->
     <key>StartCalendarInterval</key>
     <dict>
         <key>Hour</key>
-        <integer>10</integer>
+        <integer>2</integer>
         <key>Minute</key>
-        <integer>15</integer>
+        <integer>30</integer>
     </dict>
     <key>RunAtLoad</key>
     <false/>
