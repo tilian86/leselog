@@ -21,6 +21,16 @@ export const CONFIG = {
   ANNAS_ARCHIVE_URL: "https://annas-archive.gl",
   ANNAS_ARCHIVE_MIRRORS: ["https://annas-archive.gl", "https://annas-archive.pk", "https://annas-archive.gd"],
 
+  // Weitere Schattenbibliotheken als Rückfall, wenn Anna's Archive nichts findet.
+  // Stand 29.09.2026 geprüft: libgen.li + libgen.vg antworten (.is/.rs/.gs tot),
+  // Z-Library unter z-library.sk (Bot-Sperre: nur im echten Browser, curl kriegt 517), Liber3 (IPFS-Index über LibGen/Z-Lib) unter liber3.eth.limo.
+  // Anna's Archive enthält LibGen und Z-Library bereits – die Links helfen vor allem,
+  // wenn Anna's gerade klemmt oder der Deutsch/EPUB-Filter dort zu streng war
+  // (die Rückfall-Links suchen ohne Filter, finden also auch PDFs).
+  LIBGEN_URL: "https://libgen.li",
+  ZLIB_URL: "https://z-library.sk",
+  LIBER3_URL: "https://liber3.eth.limo",
+
   // Vermittler für die Deutsche Nationalbibliothek (CORS). Findet zu englischen
   // Büchern die deutsche Ausgabe. Quelltext in worker-dnb/.
   DNB_PROXY_URL: "https://leselog-dnb.florian-s-thiel.workers.dev/",

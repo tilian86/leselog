@@ -66,6 +66,18 @@ export function storeLinks(b) {
   const aaq = "/search?q=" + (isbn ? encodeURIComponent(isbn) : term)
     + "&ext=epub" + (lang ? "&lang=" + lang : "");
   links.push({ name: "Anna\u2019s Archive", url: aa + aaq });
+  // Rückfall-Bibliotheken, in dieser Reihenfolge durchprobieren. Ohne Format-/
+  // Sprachfilter, damit auch PDF- oder anderssprachige Ausgaben auftauchen.
+  const base = (u) => String(u || "").replace(/\/+$/, "");
+  // Nur Titel + Erstautor: Volltextsuchen dort stolpern über Autorenlisten.
+  const erstautor = String(b.author || "").split(/,|&| und /)[0].trim();
+  const titel = encodeURIComponent([b.title, erstautor].filter(Boolean).join(" "));
+  if (CONFIG.LIBGEN_URL) links.push({ name: "LibGen",
+    url: base(CONFIG.LIBGEN_URL) + "/index.php?req=" + (isbn ? encodeURIComponent(isbn) : term) });
+  if (CONFIG.ZLIB_URL) links.push({ name: "Z-Library",
+    url: base(CONFIG.ZLIB_URL) + "/s/" + (titel || term) });
+  if (CONFIG.LIBER3_URL) links.push({ name: "Liber3",
+    url: base(CONFIG.LIBER3_URL) + "/search?q=" + (titel || term) });
   links.push({ name: "Amazon", url: b.isbn10
     ? "https://www.amazon.de/dp/" + b.isbn10
     : "https://www.amazon.de/s?k=" + (isbn || term) + "&i=stripbooks" });
