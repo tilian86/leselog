@@ -52,7 +52,7 @@ async function scribe(audio, env) {
   if (!env.ELEVENLABS_API_KEY) throw new Error("ELEVENLABS_API_KEY fehlt");
   const fd = new FormData();
   fd.append("file", audio, "note.webm");
-  fd.append("model_id", "scribe_v1");
+  fd.append("model_id", "scribe_v2");
   if (env.LANGUAGE) fd.append("language_code", env.LANGUAGE);
   const res = await fetch("https://api.elevenlabs.io/v1/speech-to-text", {
     method: "POST",
@@ -64,12 +64,12 @@ async function scribe(audio, env) {
   return (data.text || "").trim();
 }
 
-// OpenAI Whisper
+// OpenAI gpt-transcribe (seit 29.09.2026, Nachfolger von Whisper)
 async function whisper(audio, env) {
   if (!env.OPENAI_API_KEY) throw new Error("OPENAI_API_KEY fehlt");
   const fd = new FormData();
   fd.append("file", audio, "note.webm");
-  fd.append("model", "whisper-1");
+  fd.append("model", "gpt-transcribe");
   if (env.LANGUAGE) fd.append("language", env.LANGUAGE);
   const res = await fetch("https://api.openai.com/v1/audio/transcriptions", {
     method: "POST",
