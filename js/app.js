@@ -3,7 +3,7 @@ import { CONFIG } from "./config.js";
 import { currentSession, onAuth, signInPassword, signUpPassword, signOut,
          fetchBooks, insertBook, insertBooks, updateBook, removeBook,
          uploadEpub, epubSignedUrl, removeEpub } from "./supa.js";
-import { searchBooks, searchByISBN, guessReadingDays, parseUtterance, storeLinks, fetchExtras, searchCovers } from "./enrich.js";
+import { searchBooks, searchByISBN, guessReadingDays, parseUtterance, storeLinks, fetchExtras, searchCovers, findPreview } from "./enrich.js";
 import { startDictation, hasMic } from "./audio.js";
 import { startScanner } from "./scan.js";
 import { readEpubMeta } from "./epub.js";
@@ -939,6 +939,16 @@ async function openReview(b) {
   bindForm(b, true);
   loadWatchBox(b);
   loadGermanHint(b);
+  loadPreviewLink(b);
+}
+// Setzt „Leseprobe" vorne in die Buchlinks, falls Google eine Vorschau zeigt.
+async function loadPreviewLink(b) {
+  if ((b.media_type || "book") !== "book") return;
+  const url = await findPreview(b);
+  const box = $("#storeLinks");
+  if (!url || !box || box.querySelector(".probe")) return;
+  box.insertAdjacentHTML("afterbegin",
+    `<a class="probe" href="${esc(url)}" target="_blank" rel="noopener">📖 Leseprobe ↗</a>`);
 }
 // Prüft bei englischen Büchern, ob es eine deutsche Ausgabe gibt, und fragt nach.
 async function loadGermanHint(b) {
@@ -988,6 +998,7 @@ async function openDetail(b) {
   bindForm(b, false);
   loadWatchBox(b);                      // Streaming-Anbieter im Hintergrund holen
   loadGermanHint(b);                    // ggf. deutsche Ausgabe vorschlagen
+  loadPreviewLink(b);                   // Leseprobe, falls Google eine Vorschau hat
   const ex = await getExtras(b);        // fehlende Infos im Hintergrund nachtragen
   if (ex && (ex.description || ex.web_rating != null)) {
     Object.assign(b, ex);

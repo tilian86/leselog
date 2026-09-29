@@ -353,3 +353,40 @@ export function guessReadingDays(text) {
   if (m[2].startsWith("monat")) return n * 30;
   return n;
 }
+
+// ---------- Leseprobe (Google-Books-Vorschau) ----------
+// Liefert den Link zur Online-Vorschau, aber nur, wenn Google für das Buch
+// wirklich Seiten zeigt (viewability PARTIAL/ALL_PAGES) – sonst null, damit
+// kein toter Link erscheint. Nur über Google-ID oder ISBN, nie über eine
+// Titelsuche (die kann ein falsches Buch treffen).
+// Ergebnis wird 30 Tage im Browser gemerkt, um das Google-Kontingent zu schonen.
+const PROBE_TTL = 30 * 24 * 3600 * 1000;
+export async function findPreview(b) {
+  const isbn = b.isbn13 || b.isbn10 || "";
+  const cacheKey = "probe:" + (b.google_books_id || isbn);
+  if (!b.google_books_id && !isbn) return null;
+  try {
+    const c = JSON.parse(localStorage.getItem(cacheKey) || "null");
+    if (c && Date.now() - c.t < PROBE_TTL) return c.url;
+  } catch (_) {}
+  const key = CONFIG.GBOOKS_KEY ? "&key=" + CONFIG.GBOOKS_KEY : "";
+  const API = "https://www.googleapis.com/books/v1/volumes";
+  let item = null;
+  try {
+    if (b.google_books_id) {
+      const r = await fetch(API + "/" + b.google_books_id + "?country=DE" + key);
+      if (r.ok) item = await r.json();
+    }
+    if (!item && isbn) {
+      const r = await fetch(API + "?q=isbn:" + isbn + "&maxResults=1&country=DE" + key);
+      if (r.ok) { const j = await r.json(); item = j.items && j.items[0]; }
+      else if (r.status === 403) return null;   // Kontingent leer: nichts merken, später neu versuchen
+    }
+  } catch (_) { return null; }
+  const view = item && item.accessInfo && item.accessInfo.viewability;
+  const url = item && (view === "PARTIAL" || view === "ALL_PAGES")
+    ? "https://books.google.de/books?id=" + item.id + "&printsec=frontcover"
+    : null;
+  try { localStorage.setItem(cacheKey, JSON.stringify({ t: Date.now(), url })); } catch (_) {}
+  return url;
+}
