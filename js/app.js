@@ -370,7 +370,7 @@ function liveList() {
     // Suche geht immer übers ganze Regal (auch Archiv), egal welcher Reiter offen ist
     const q = state.search.toLowerCase();
     list = state.books.filter((b) => (b.media_type || "book") === state.mediaType &&
-      (b.title + " " + (b.author || "") + " " + (b.category || "")).toLowerCase().includes(q));
+      (b.title + " " + (b.subtitle || "") + " " + (b.author || "") + " " + (b.category || "")).toLowerCase().includes(q));
   } else list = statusFiltered();
   if (state.category) list = list.filter((b) => (b.category || NO_CAT) === state.category);
   return sortBooks(list);

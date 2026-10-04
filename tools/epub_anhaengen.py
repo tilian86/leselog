@@ -4,8 +4,9 @@
 
 <datei> darf sein: .epub, ein Apple-Books-Ordner-EPUB (wird sauber gezippt) oder
 .mobi/.azw3 (wird mit Calibre zu EPUB umgewandelt). Kopiergeschützte Dateien
-(Apple-Books-Käufe, Adobe-DRM) werden übersprungen, über 25 MB ebenfalls.
-Pfad im Bucket wie in der App: epubs/{user_id}/{book_id}.epub.
+(Apple-Books-Käufe, Adobe-DRM) werden übersprungen, über 100 MB ebenfalls.
+Seit 04.10.2026 landet die Datei in Cloudflare R2 (Bucket leselog-epubs, per wrangler),
+Pfad wie in der App: „r2:{user_id}/{book_id}.epub“.
 """
 import json, os, subprocess, sys, tempfile, urllib.request, zipfile, re
 bid, src, name = sys.argv[1:4]
@@ -35,8 +36,10 @@ with zipfile.ZipFile(src) as z:
     n = z.namelist(); z.testzip()
     if any(x.endswith(("sinf.xml", "rights.xml")) for x in n): sys.exit("DRM – übersprungen")
 data = open(src, "rb").read()
-if len(data) > 25 * 1024 * 1024: sys.exit(f"zu groß: {len(data)//1048576} MB")
-path = f"{book['user_id']}/{bid}.epub"
-req("POST", f"{U}/storage/v1/object/epubs/{path}", data, {"Content-Type": "application/epub+zip", "x-upsert": "true"})
-req("PATCH", f"{U}/rest/v1/books?id=eq.{bid}", json.dumps({"epub_path": path, "epub_name": name, "epub_size": len(data)}).encode(), {"Content-Type": "application/json", "Prefer": "return=minimal"})
+if len(data) > 100 * 1024 * 1024: sys.exit(f"zu groß: {len(data)//1048576} MB")
+key = f"{book['user_id']}/{bid}.epub"
+wr = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "worker-dateien")
+subprocess.run(f'export PATH=~/.local/node/bin:$PATH; npx wrangler r2 object put "leselog-epubs/{key}" --file "{src}" '
+               f'--content-type application/epub+zip --remote', shell=True, cwd=wr, check=True, capture_output=True)
+req("PATCH", f"{U}/rest/v1/books?id=eq.{bid}", json.dumps({"epub_path": "r2:" + key, "epub_name": name, "epub_size": len(data)}).encode(), {"Content-Type": "application/json", "Prefer": "return=minimal"})
 print(f"✓ {book['title']} ← {name} ({len(data)//1024} KB)")
