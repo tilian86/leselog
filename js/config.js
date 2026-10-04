@@ -35,6 +35,9 @@ export const CONFIG = {
   // Büchern die deutsche Ausgabe. Quelltext in worker-dnb/.
   DNB_PROXY_URL: "https://leselog-dnb.florian-s-thiel.workers.dev/",
 
+  // Datei-Speicher für EPUBs + Archiv-Cover (Cloudflare R2). Quelltext in worker-dateien/.
+  FILES_URL: "https://leselog-dateien.florian-s-thiel.workers.dev",
+
   // App-Meta
   APP_NAME: "Leselog",
 };

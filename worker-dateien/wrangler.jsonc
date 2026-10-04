@@ -1,0 +1,13 @@
+{
+  // Leselog-Dateien: EPUBs + Cover in R2 (statt Supabase-Storage, dessen Gratis-Kontingent nur 1 GB hat).
+  // Secret: wrangler secret put SIGN_SECRET  (HMAC für zeitlich begrenzte Download-/Teilen-Links)
+  "name": "leselog-dateien",
+  "main": "index.js",
+  "compatibility_date": "2025-01-01",
+  "r2_buckets": [{ "binding": "BUCKET", "bucket_name": "leselog-epubs" }],
+  "vars": {
+    "SUPABASE_URL": "https://wejvvldovywrernuujgt.supabase.co",
+    "SUPABASE_KEY": "sb_publishable_ZyFVdlb-Kxuvo6T5SJ43cw_I5l6LBTz",
+    "ALLOWED_ORIGINS": "https://tilian86.github.io,http://localhost:8080,http://127.0.0.1:8080"
+  }
+}

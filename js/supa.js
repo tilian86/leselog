@@ -85,29 +85,45 @@ export async function removeBook(id) {
   if (error) throw error;
 }
 
-// ---------- EPUB-Anhänge (privater Storage-Bucket) ----------
-async function uid() {
-  const { data } = await supa.auth.getUser();
-  return data.user && data.user.id;
+// ---------- EPUB-Anhänge ----------
+// Neu (seit 04.10.2026): Cloudflare R2 über den Worker „leselog-dateien“ (Pfad „r2:<uid>/<book>.epub“),
+// weil das Supabase-Gratis-Kontingent nur 1 GB hat. Alte Pfade ohne „r2:“ liegen im Supabase-Bucket „epubs“.
+async function fileApi(path, opts = {}) {
+  const s = await currentSession();
+  if (!s) throw new Error("Nicht angemeldet");
+  const r = await fetch(CONFIG.FILES_URL.replace(/\/+$/, "") + path,
+    { ...opts, headers: { ...(opts.headers || {}), Authorization: "Bearer " + s.access_token } });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || "Datei-Speicher: Fehler " + r.status);
+  return j;
 }
+const isR2 = (path) => String(path || "").startsWith("r2:");
 
 export async function uploadEpub(bookId, file) {
-  const path = `${await uid()}/${bookId}.epub`;
-  const { error } = await supa.storage.from("epubs")
-    .upload(path, file, { upsert: true, contentType: "application/epub+zip" });
-  if (error) throw error;
-  return path;
+  const j = await fileApi("/f/" + bookId, { method: "PUT", body: file, headers: { "Content-Type": "application/epub+zip" } });
+  return j.path;
 }
 
 // Signierter Link. expiresSec: 3600 = 1 Std (eigener Download), 30 Tage = Teilen.
-export async function epubSignedUrl(path, expiresSec = 3600, download = false) {
-  const opts = download ? { download: true } : undefined;
+export async function epubSignedUrl(path, expiresSec = 3600, download = false, name = "") {
+  if (isR2(path)) {
+    const book = path.split("/").pop().replace(/\.epub$/, "");
+    const j = await fileApi("/sign", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ book, ttl: expiresSec, download, name }) });
+    return j.url;
+  }
+  const opts = download ? { download: name || true } : undefined;
   const { data, error } = await supa.storage.from("epubs").createSignedUrl(path, expiresSec, opts);
   if (error) throw error;
   return data.signedUrl;
 }
 
 export async function removeEpub(path) {
+  if (isR2(path)) {
+    const book = path.split("/").pop().replace(/\.epub$/, "");
+    await fileApi("/f/" + book, { method: "DELETE" });
+    return;
+  }
   const { error } = await supa.storage.from("epubs").remove([path]);
   if (error) throw error;
 }

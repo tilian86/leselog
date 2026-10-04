@@ -4,3 +4,5 @@ worker/.wrangler/
 worker/node_modules/
 *.log
 .dev.vars
+worker-dateien/.wrangler/
+.testsession.json

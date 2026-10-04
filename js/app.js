@@ -31,20 +31,33 @@ const I = {
 // ---------------- State ----------------
 const state = { session: null, books: [], filter: "all", search: "", view: "shelf",
   layout: localStorage.getItem("leselog_layout") || "grid",
-  sort: localStorage.getItem("leselog_sort") || "added",
+  sort: localStorage.getItem("leselog_sort") || "added", category: "",
   mediaType: localStorage.getItem("leselog_media") || "book" };
 
 const MEDIA = [["book", "📚", "Bücher"], ["movie", "🎬", "Filme"], ["series", "📺", "Serien"]];
 const isMediaType = (mt) => mt === "movie" || mt === "series";
 function typeName(mt) { return (MEDIA.find((m) => m[0] === (mt || state.mediaType)) || MEDIA[0])[2]; }
 function statusLabel(status, mt) {
-  const book = { read: "Gelesen", reading: "Lese gerade", want: "Will lesen", dropped: "Abgebrochen" };
+  const book = { read: "Gelesen", reading: "Lese gerade", want: "Will lesen", dropped: "Abgebrochen", archive: "Archiv" };
   const media = { read: "Gesehen", reading: "Schaue gerade", want: "Will sehen", dropped: "Abgebrochen" };
   return (isMediaType(mt || state.mediaType) ? media : book)[status] || status;
 }
 
+// Eigene Kategorien (Spalte books.category). Reihenfolge = Reihenfolge der Gruppen beim Sortieren.
+const CATEGORIES = [
+  ["Belletristik", "📖"], ["Krimi & Thriller", "🔍"], ["Fantasy & Science-Fiction", "🐉"],
+  ["Biografien & Memoiren", "👤"], ["Reisen & Abenteuer", "🧭"], ["Persönliche Entwicklung", "🌱"],
+  ["Psychologie & Beziehungen", "💞"], ["Philosophie & Spiritualität", "🪷"], ["Glaube & Religion", "✝️"],
+  ["Gesellschaft & Geschichte", "🏛️"], ["Wissenschaft & Natur", "🔬"], ["Wirtschaft & Finanzen", "💶"],
+  ["Technik & Krypto", "💻"], ["Gesundheit & Körper", "🫀"], ["Ratgeber & Nachschlagen", "🧰"],
+];
+const NO_CAT = "Ohne Kategorie";
+const catIcon = (c) => (CATEGORIES.find((x) => x[0] === c) || [, "📚"])[1];
+const catIndex = (c) => { const i = CATEGORIES.findIndex((x) => x[0] === c); return i < 0 ? 99 : i; };
+
 const SORTS = [
   ["added", "Zuletzt hinzugefügt"],
+  ["category", "Nach Kategorie"],
   ["read", "Zuletzt gelesen"],
   ["chrono", "Chronologisch (alt → neu)"],
   ["title", "Titel (A–Z)"],
@@ -110,7 +123,7 @@ function coverImg(b) {
     ` onerror="var a=this.dataset.amz;if(a&amp;&amp;this.src.indexOf(a)===-1){this.src=a}else{this.remove()}">`;
 }
 function coverHTML(b, cls = "") {
-  const status = b.status && b.status !== "read"
+  const status = b.status && b.status !== "read" && b.status !== "archive"
     ? `<span class="badge-status ${b.status}">${statusLabel(b.status, b.media_type)}</span>` : "";
   const hl = b.highlight ? `<span class="badge-highlight" title="Highlight">★</span>` : "";
   // Fallback (Titel/Autor auf Buchrücken) liegt immer darunter; das Bild deckt es ab.
@@ -264,9 +277,11 @@ function renderMain() {
 
   if (state.view === "stats") return renderStats(main);
 
+  const isBook = state.mediaType === "book";
   const filters = [["all", "Übersicht"], ["read", statusLabel("read")], ["reading", statusLabel("reading")],
     ["want", statusLabel("want")], ["dropped", statusLabel("dropped")], ["highlight", "★ Highlights"]];
-  const counts = { all: 0, read: 0, reading: 0, want: 0, dropped: 0, highlight: 0 };
+  if (isBook) filters.push(["archive", "📦 Archiv"], ["every", "Alle"]);
+  const counts = { all: 0, read: 0, reading: 0, want: 0, dropped: 0, highlight: 0, archive: 0, every: mediaBooks.length };
   mediaBooks.forEach((b) => { const s = b.status || "read"; if (counts[s] != null) counts[s]++;
     if (OVERVIEW_STATUS.includes(s)) counts.all++;
     if (b.highlight) counts.highlight++; });
@@ -280,6 +295,7 @@ function renderMain() {
     </div>
     <div class="seg">${filters.map(([k, l]) =>
       `<button data-f="${k}" class="${state.filter === k ? "on" : ""}">${l}<span class="seg-count">${counts[k]}</span></button>`).join("")}</div>
+    ${isBook ? categoryChipsHTML() : ""}
     <div style="height:16px"></div>
     <div id="shelfWrap">${shelfHTML(list)}</div>`;
 
@@ -293,13 +309,36 @@ function renderMain() {
   };
   main.querySelectorAll(".seg button").forEach((b) =>
     b.onclick = () => { state.filter = b.dataset.f; renderMain(); });
+  main.querySelectorAll(".cat-chips button").forEach((b) =>
+    b.onclick = () => { state.category = state.category === b.dataset.c ? "" : b.dataset.c; renderMain(); });
   bindCards();
 }
 
+// Kategorie-Chips unter den Reitern: zählen innerhalb des gewählten Reiters
+function categoryChipsHTML() {
+  const base = statusFiltered();
+  const n = {};
+  base.forEach((b) => { const c = b.category || NO_CAT; n[c] = (n[c] || 0) + 1; });
+  const cats = [...CATEGORIES.map((c) => c[0]), NO_CAT].filter((c) => n[c] || c === state.category);
+  if (cats.length < 2 && !state.category) return "";
+  return `<div class="cat-chips">
+    <button data-c="" class="${state.category ? "" : "on"}">Alle Kategorien</button>
+    ${cats.map((c) => `<button data-c="${esc(c)}" class="${state.category === c ? "on" : ""}">${catIcon(c)} ${esc(c)}<span class="seg-count">${n[c] || 0}</span></button>`).join("")}
+  </div>`;
+}
+
 function shelfHTML(list) {
-  if (!list.length) return emptyHTML();
-  if (state.layout === "list") return `<div class="shelf-list">${list.map(rowHTML).join("")}</div>`;
-  return `<div class="shelf">${list.map(bookCardHTML).join("")}</div>`;
+  if (!list.length) return (state.search || state.category) ? `<div class="empty"><p>Nichts gefunden.</p></div>` : emptyHTML();
+  const block = (l) => state.layout === "list"
+    ? `<div class="shelf-list">${l.map(rowHTML).join("")}</div>`
+    : `<div class="shelf">${l.map(bookCardHTML).join("")}</div>`;
+  if (state.sort !== "category" || state.mediaType !== "book") return block(list);
+  // Nach Kategorie: Abschnitte mit Überschrift
+  const groups = [];
+  list.forEach((b) => { const c = b.category || NO_CAT;
+    const g = groups[groups.length - 1];
+    if (g && g.c === c) g.l.push(b); else groups.push({ c, l: [b] }); });
+  return groups.map((g) => `<div class="cat-head">${catIcon(g.c)} ${esc(g.c)} <span>${g.l.length}</span></div>${block(g.l)}`).join("");
 }
 function rowHTML(b) {
   const cov = coverImg(b);
@@ -318,13 +357,22 @@ function rowHTML(b) {
   </div>`;
 }
 
-function liveList() {
+function statusFiltered() {
   let list = state.books.filter((b) => (b.media_type || "book") === state.mediaType);
   if (state.filter === "highlight") list = list.filter((b) => b.highlight);
   else if (state.filter === "all") list = list.filter((b) => OVERVIEW_STATUS.includes(b.status || "read"));
-  else list = list.filter((b) => (b.status || "read") === state.filter);
-  if (state.search) { const q = state.search.toLowerCase();
-    list = list.filter((b) => (b.title + " " + (b.author || "")).toLowerCase().includes(q)); }
+  else if (state.filter !== "every") list = list.filter((b) => (b.status || "read") === state.filter);
+  return list;
+}
+function liveList() {
+  let list;
+  if (state.search) {
+    // Suche geht immer übers ganze Regal (auch Archiv), egal welcher Reiter offen ist
+    const q = state.search.toLowerCase();
+    list = state.books.filter((b) => (b.media_type || "book") === state.mediaType &&
+      (b.title + " " + (b.author || "") + " " + (b.category || "")).toLowerCase().includes(q));
+  } else list = statusFiltered();
+  if (state.category) list = list.filter((b) => (b.category || NO_CAT) === state.category);
   return sortBooks(list);
 }
 
@@ -341,6 +389,9 @@ function sortBooks(list) {
     case "author": l.sort((a, b) => (a.author || "￿").localeCompare(b.author || "￿", "de", { sensitivity: "base" })); break;
     case "rating": l.sort((a, b) => num(b.rating) - num(a.rating)); break;
     case "pages":  l.sort((a, b) => num(b.page_count) - num(a.page_count)); break;
+    case "category": l.sort((a, b) => catIndex(a.category) - catIndex(b.category) ||
+      (a.author || "￿").localeCompare(b.author || "￿", "de", { sensitivity: "base" }) ||
+      (a.title || "").localeCompare(b.title || "", "de", { sensitivity: "base" })); break;
     // "added": Reihenfolge von state.books (created_at absteigend) beibehalten
   }
   return l;
@@ -490,6 +541,8 @@ function renderStats(main) {
   const reading = all.filter((b) => b.status === "reading").length;
   const want = all.filter((b) => b.status === "want").length;
   const dropped = all.filter((b) => b.status === "dropped");
+  const archived = all.filter((b) => b.status === "archive").length;
+  const withEpub = all.filter((b) => b.epub_path).length;
   const highlights = all.filter((b) => b.highlight)
     .sort((a, b) => (b.rating || 0) - (a.rating || 0) || (a.title || "").localeCompare(b.title || "", "de"));
   const top = [...read].filter((b) => b.rating >= 4 && !b.highlight).sort((a, b) => (b.rating - a.rating)).slice(0, 6);
@@ -508,7 +561,7 @@ function renderStats(main) {
       <div class="stat-card"><div class="num">${people.size}</div><div class="lab">verschiedene ${peopleLab}</div></div>
       <div class="stat-card"><div class="num">${avg}</div><div class="lab">Ø Bewertung</div></div>
     </div>
-    ${(reading || want || dropped.length) ? `<div class="mini-counts">${reading ? `<span>📖 ${reading} ${media ? "schaue ich gerade" : "lese ich gerade"}</span>` : ""}${want ? `<span>🔖 ${want} auf der ${media ? "Will-sehen" : "Will-lesen"}-Liste</span>` : ""}${dropped.length ? `<span>🚫 ${dropped.length} abgebrochen</span>` : ""}</div>` : ""}
+    ${(reading || want || dropped.length || archived) ? `<div class="mini-counts">${reading ? `<span>📖 ${reading} ${media ? "schaue ich gerade" : "lese ich gerade"}</span>` : ""}${want ? `<span>🔖 ${want} auf der ${media ? "Will-sehen" : "Will-lesen"}-Liste</span>` : ""}${dropped.length ? `<span>🚫 ${dropped.length} abgebrochen</span>` : ""}${archived ? `<span>📦 ${archived} im Archiv</span>` : ""}${withEpub ? `<span>📎 ${withEpub} mit EPUB</span>` : ""}</div>` : ""}
 
     ${yearSectionHTML(read)}
 
@@ -657,6 +710,7 @@ async function enrichMissingCovers() {
 function runFor(parsed) { return isMediaType(state.mediaType) ? runMediaSearch(parsed) : runSearch(parsed); }
 
 function openAdd() {
+  pendingEpub = null;
   const media = isMediaType(state.mediaType);
   const one = { book: "Buch", movie: "Film", series: "Serie" }[state.mediaType];
   const micLabel = media ? one + " einsprechen" : "Buch einsprechen";
@@ -818,6 +872,7 @@ function showCandidates(results, parsed) {
 // In der Übersicht („Alle") bewusst ohne Will-lesen/Abgebrochen – die haben eigene Reiter.
 const OVERVIEW_STATUS = ["read", "reading"];
 const STATUS_KEYS = ["read", "reading", "want", "dropped"];
+const statusKeys = (mt) => isMediaType(mt) ? STATUS_KEYS : [...STATUS_KEYS, "archive"];
 
 function bookFormHTML(b, isNew) {
   b = b || {};
@@ -885,7 +940,7 @@ function bookFormHTML(b, isNew) {
     <div id="klappentext">${klappentextHTML(b)}</div>
 
     <div class="status-pick" id="statusPick">
-      ${STATUS_KEYS.map((k) => `<button data-s="${k}" class="${(b.status || "read") === k ? "on" : ""}">${statusLabel(k, mt)}</button>`).join("")}
+      ${statusKeys(mt).map((k) => `<button data-s="${k}" class="${(b.status || "read") === k ? "on" : ""}">${statusLabel(k, mt)}</button>`).join("")}
     </div>
 
     <label class="fld abandon-fld" id="abandonFld" style="${(b.status === "dropped") ? "" : "display:none"}">
@@ -896,6 +951,9 @@ function bookFormHTML(b, isNew) {
       <input class="input" id="f_title" value="${esc(b.title)}"></label>
     <label class="fld"><span class="lbl">${authorLabel}</span>
       <input class="input" id="f_author" value="${esc(b.author || "")}" placeholder="wird gesucht…"></label>
+    ${mt === "book" ? `<label class="fld"><span class="lbl">Kategorie</span>
+      <select class="input" id="f_category"><option value="">– keine –</option>${CATEGORIES.map(([c, ic]) =>
+        `<option value="${esc(c)}" ${b.category === c ? "selected" : ""}>${ic} ${esc(c)}</option>`).join("")}</select></label>` : ""}
 
     ${midFields}
 
@@ -1070,7 +1128,7 @@ function bindEpub(b) {
   if (add) add.onclick = () => fileInp.click();
   if (fileInp) fileInp.onchange = async () => {
     const f = fileInp.files[0]; if (!f) return;
-    if (f.size > 26214400) return toast("Datei zu groß (max. 25 MB)");
+    if (f.size > 100 * 1024 * 1024) return toast("Datei zu groß (max. 100 MB)");
     if (DEMO) return toast("(Demo) Upload nicht möglich");
     const prev = box.innerHTML;
     box.innerHTML = `<div class="epub-uploading"><span class="spin dark"></span> lädt hoch …</div>`;
@@ -1085,7 +1143,7 @@ function bindEpub(b) {
   const dl = $("#epubDl");
   if (dl) dl.onclick = async () => {
     dl.disabled = true;
-    try { window.location.href = await epubSignedUrl(b.epub_path, 3600, true); }
+    try { window.location.href = await epubSignedUrl(b.epub_path, 3600, true, b.epub_name); }
     catch (e) { toast("Download fehlgeschlagen"); }
     dl.disabled = false;
   };
@@ -1094,7 +1152,7 @@ function bindEpub(b) {
   if (share) share.onclick = async () => {
     share.disabled = true;
     try {
-      const url = await epubSignedUrl(b.epub_path, 60 * 60 * 24 * 30);
+      const url = await epubSignedUrl(b.epub_path, 60 * 60 * 24 * 30, false, b.epub_name);
       try { await navigator.clipboard.writeText(url); toast("Link kopiert – 30 Tage gültig"); }
       catch (_) { prompt("Teilbarer Link (30 Tage gültig):", url); }
     } catch (e) { toast("Link fehlgeschlagen"); }
@@ -1182,6 +1240,7 @@ function bindForm(b, isNew) {
       rec.publisher = val("f_pub").trim() || null;
       rec.isbn13 = val("f_isbn") || draft.isbn13 || null;
       rec.original_title = val("f_origtitle") || draft.original_title || null;
+      rec.category = val("f_category") || null;
     }
     if (!rec.title) return toast("Titel fehlt");
     saveBtn.innerHTML = '<span class="spin"></span>'; saveBtn.disabled = true;
@@ -1197,6 +1256,12 @@ function bindForm(b, isNew) {
         const saved = await insertBook(full);
         state.books.unshift(saved);
         toast("„" + saved.title + "“ ins Regal gestellt 📚");
+        if (pendingEpub && mt === "book") {
+          const f = pendingEpub; pendingEpub = null;
+          uploadEpub(saved.id, f).then((path) => updateBook(saved.id, { epub_path: path, epub_name: f.name, epub_size: f.size }))
+            .then((s2) => { const i = state.books.findIndex((x) => x.id === saved.id); if (i > -1) state.books[i] = s2; toast("EPUB angehängt 📎"); })
+            .catch((e) => { console.error(e); toast("EPUB-Upload fehlgeschlagen – im Buch nochmal anhängen"); });
+        }
       } else {
         const saved = await updateBook(b.id, rec);
         const idx = state.books.findIndex((x) => x.id === b.id);
@@ -1211,7 +1276,9 @@ function bindForm(b, isNew) {
   if (!isNew) $("#delBtn").onclick = async () => {
     if (!confirm("„" + b.title + "“ wirklich aus dem Regal nehmen?")) return;
     if (DEMO) { state.books = state.books.filter((x) => x.id !== b.id); closeSheet(); renderMain(); toast("(Demo) entfernt"); return; }
-    try { await removeBook(b.id); state.books = state.books.filter((x) => x.id !== b.id);
+    try { await removeBook(b.id);
+      if (b.epub_path) removeEpub(b.epub_path).catch(() => {});
+      state.books = state.books.filter((x) => x.id !== b.id);
       closeSheet(); renderMain(); toast("Entfernt"); }
     catch (e) { toast("Löschen fehlgeschlagen"); }
   };
@@ -1265,7 +1332,9 @@ async function openScanner() {
 // ================================================================
 //  EPUB
 // ================================================================
+let pendingEpub = null;  // EPUB, das beim Speichern eines neuen Buchs gleich angehängt wird
 async function onEpub(file) {
+  pendingEpub = file.size <= 100 * 1024 * 1024 ? file : null;
   openSheet(`<h2>EPUB wird gelesen …</h2><div class="center-load"><span class="spin dark"></span>${esc(file.name)}</div>`);
   try {
     const meta = await readEpubMeta(file);
