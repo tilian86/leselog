@@ -5,10 +5,13 @@
 Ziel: Meine Ablage/Diverses/E-Books (Leselog-Sicherung)/<Kategorie>/<Autor> – <Titel>.epub
 Holt nur, was fehlt oder sich geändert hat (Größe), verschiebt Dateien gelöschter Bücher nach „_Aus Leselog entfernt“,
 und schreibt eine Übersicht.csv. Quelle: Cloudflare R2 (per wrangler) bzw. alte Supabase-Pfade.
+
+Nachts (launchd) darf Python nicht in den Google-Drive-Ordner (macOS-Schutz) – dann setzt
+tools/sicherung_nachts.sh LESELOG_SICHERUNG_ZIEL auf einen lokalen Spiegel und schiebt ihn per rclone nach Drive.
 """
 import csv, json, os, re, subprocess, sys, time, unicodedata, urllib.request, urllib.parse
 from concurrent.futures import ThreadPoolExecutor
-ZIEL = os.path.expanduser("~/Library/CloudStorage/GoogleDrive-florian.s.thiel@gmail.com/Meine Ablage/Diverses/E-Books (Leselog-Sicherung)")
+ZIEL = os.environ.get("LESELOG_SICHERUNG_ZIEL") or os.path.expanduser("~/Library/CloudStorage/GoogleDrive-florian.s.thiel@gmail.com/Meine Ablage/Diverses/E-Books (Leselog-Sicherung)")
 K = subprocess.run(["security", "find-generic-password", "-s", "leselog-service-key", "-a", "leselog", "-w"], capture_output=True, text=True).stdout.strip()
 U = "https://wejvvldovywrernuujgt.supabase.co"
 H = {"apikey": K, "Authorization": f"Bearer {K}", "User-Agent": "leselog-tools/1.0"}
@@ -53,7 +56,7 @@ ids = {b["id"] for b in soll.values()}; weg = 0
 for root, _, files in os.walk(ZIEL):
     if "_Aus Leselog entfernt" in root: continue
     for f in files:
-        rel = os.path.relpath(os.path.join(root, f), ZIEL)
+        rel = unicodedata.normalize("NFC", os.path.relpath(os.path.join(root, f), ZIEL))
         if not f.endswith(".epub") or rel in soll: continue
         bid = alt.get(rel)
         if bid in ids: os.remove(os.path.join(root, f))
