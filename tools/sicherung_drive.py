@@ -6,7 +6,7 @@ Ziel: Meine Ablage/Diverses/E-Books (Leselog-Sicherung)/<Kategorie>/<Autor> – 
 Holt nur, was fehlt oder sich geändert hat (Größe), verschiebt Dateien gelöschter Bücher nach „_Aus Leselog entfernt“,
 und schreibt eine Übersicht.csv. Quelle: Cloudflare R2 (per wrangler) bzw. alte Supabase-Pfade.
 """
-import csv, json, os, re, subprocess, sys, unicodedata, urllib.request, urllib.parse
+import csv, json, os, re, subprocess, sys, time, unicodedata, urllib.request, urllib.parse
 from concurrent.futures import ThreadPoolExecutor
 ZIEL = os.path.expanduser("~/Library/CloudStorage/GoogleDrive-florian.s.thiel@gmail.com/Meine Ablage/Diverses/E-Books (Leselog-Sicherung)")
 K = subprocess.run(["security", "find-generic-password", "-s", "leselog-service-key", "-a", "leselog", "-w"], capture_output=True, text=True).stdout.strip()
@@ -31,15 +31,21 @@ def hole(item):
     os.makedirs(os.path.dirname(ziel), exist_ok=True); tmp = ziel + ".teil"
     p = b["epub_path"]
     if p.startswith("r2:"):
-        r = subprocess.run(f'export PATH=~/.local/node/bin:$PATH; npx wrangler r2 object get "leselog-epubs/{p[3:]}" --file "{tmp}" --remote',
-                           shell=True, cwd=WR, capture_output=True, text=True, timeout=600)
-        if r.returncode: return f"FEHLER {b['title']}: {r.stderr[-200:]}"
+        for versuch in range(4):  # wrangler bricht bei Netz-Wacklern gern ab -> nochmal
+            r = subprocess.run(f'export PATH=~/.local/node/bin:$PATH; npx wrangler r2 object get "leselog-epubs/{p[3:]}" --file "{tmp}" --remote',
+                               shell=True, cwd=WR, capture_output=True, text=True, timeout=600)
+            if not r.returncode: break
+            time.sleep(5 * (versuch + 1))
+        else:
+            if os.path.exists(tmp): os.remove(tmp)
+            return f"FEHLER {b['title']}: " + " ".join(r.stderr.split())[-160:]
     else:
         open(tmp, "wb").write(get(f"{U}/storage/v1/object/epubs/{urllib.parse.quote(p)}"))
     os.replace(tmp, ziel); return f"✓ {rel}"
-with ThreadPoolExecutor(6) as ex:
+fehler = 0
+with ThreadPoolExecutor(4) as ex:
     for m in ex.map(hole, soll.items()):
-        if m: print(m, flush=True)
+        if m: print(m, flush=True); fehler += m.startswith("FEHLER")
 # Umbenannte/umsortierte Bücher: alte Datei weg. Aus Leselog gelöschte Bücher: nach „_Aus Leselog entfernt“ (nie löschen).
 KARTE = os.path.join(ZIEL, ".zuordnung.json")
 alt = json.load(open(KARTE)) if os.path.exists(KARTE) else {}
@@ -61,4 +67,6 @@ json.dump({rel: b["id"] for rel, b in soll.items()}, open(KARTE, "w"), ensure_as
 with open(os.path.join(ZIEL, "Übersicht.csv"), "w", newline="", encoding="utf-8-sig") as fh:
     w = csv.writer(fh, delimiter=";"); w.writerow(["Kategorie", "Autor", "Titel", "Status", "Datei"])
     for rel, b in sorted(soll.items()): w.writerow([b["category"] or "", b["author"] or "", b["title"], STATUS.get(b["status"], b["status"]), rel])
-print(f"Sicherung: {len(soll)} EPUBs in Drive, {weg} alte Dateien weggeräumt")
+print(f"Sicherung: {len(soll) - fehler} von {len(soll)} EPUBs in Drive, {weg} alte Dateien weggeräumt"
+      + (f", {fehler} FEHLER – nochmal starten" if fehler else ""))
+sys.exit(1 if fehler else 0)
