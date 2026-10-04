@@ -73,7 +73,7 @@ const DEMO_BOOKS = [
   { id: "d2", title: "Tschick", author: "Wolfgang Herrndorf", page_count: 248, published_year: 2010, publisher: "Rowohlt", status: "read", rating: 5, highlight: true, date_finished: "2026-03-10", cover_url: "https://covers.openlibrary.org/b/id/8418261-L.jpg", isbn13: "9783871347108", web_rating: 4.4, web_rating_count: 1893, description: "Maik und der Russlanddeutsche Tschick brechen in einem geklauten Lada zu einer Reise durch die ostdeutsche Provinz auf – eine warmherzige, komische Coming-of-Age-Geschichte über Freundschaft und den Sommer des Lebens." },
   { id: "d3", title: "Die Vermessung der Welt", author: "Daniel Kehlmann", page_count: 272, published_year: 2005, publisher: "Rowohlt", status: "reading", rating: 0, cover_url: "https://covers.openlibrary.org/b/id/1165201-L.jpg" },
   { id: "d4", title: "Der Steppenwolf", author: "Hermann Hesse", page_count: 224, published_year: 1927, publisher: "S. Fischer", status: "read", rating: 5, highlight: true, date_finished: "2026-03-22", cover_url: "https://covers.openlibrary.org/b/id/3221083-L.jpg" },
-  { id: "d5", title: "Nachts ist es leiser in Teheran", author: "Shida Bazyar", page_count: 288, published_year: 2016, status: "want", rating: 0, cover_url: null },
+  { id: "d5", title: "Nachts ist es leiser in Teheran", author: "Shida Bazyar", page_count: 288, published_year: 2016, status: "want", rating: 0, pick: true, pick_note: "Familiengeschichte über Revolution und Exil – leise, klug, berührend.", cover_url: null },
   { id: "d6", title: "Der Turm", author: "Uwe Tellkamp", page_count: 976, published_year: 2008, publisher: "Suhrkamp", status: "dropped", rating: 2, abandon_reason: "Nach 200 Seiten hängengeblieben – zu ausschweifend, kam nicht rein.", date_started: "2026-02-01", cover_url: null },
   { id: "m1", media_type: "movie", title: "Matrix", author: "Lana & Lilly Wachowski", published_year: 1999, runtime: 136, status: "read", rating: 5, date_finished: "2026-02-10", web_rating: 4.1, web_rating_count: 24000, tmdb_id: 603, cover_url: "https://image.tmdb.org/t/p/w500/iVmDLujHcV1zaMnaahKWn4TcCS6.jpg", description: "Der Hacker Neo entdeckt, dass die Wirklichkeit eine Computersimulation ist, und schließt sich dem Widerstand gegen die Maschinen an." },
   { id: "s1", media_type: "series", title: "Dark", author: "Baran bo Odar, Jantje Friese", published_year: 2017, total_seasons: 3, total_episodes: 26, season: 2, episode: 5, status: "reading", rating: 5, web_rating: 4.3, web_rating_count: 5200, tmdb_id: 70523, cover_url: "https://image.tmdb.org/t/p/w500/7yQyDCqSazrYTnmxdQLAZ8YDH87.jpg", description: "In der Kleinstadt Winden verschwinden Kinder – eine Zeitreise-Mystery über vier Familien und die Abgründe der Zeit." },
@@ -125,7 +125,8 @@ function coverImg(b) {
 function coverHTML(b, cls = "") {
   const status = b.status && b.status !== "read" && b.status !== "archive"
     ? `<span class="badge-status ${b.status}">${statusLabel(b.status, b.media_type)}</span>` : "";
-  const hl = b.highlight ? `<span class="badge-highlight" title="Highlight">★</span>` : "";
+  const mark = (b.highlight ? "★" : "") + (b.pick ? "🏆" : "");
+  const hl = mark ? `<span class="badge-highlight" title="${b.pick ? "Empfehlung" : "Highlight"}">${mark}</span>` : "";
   // Fallback (Titel/Autor auf Buchrücken) liegt immer darunter; das Bild deckt es ab.
   const fallback = `<div class="cover-fallback"><div class="ft">${esc(b.title)}</div><div class="fa">${esc(b.author || "")}</div></div>`;
   return `<div class="cover-wrap ${cls}">${hl}${status}${fallback}${coverImg(b)}</div>`;
@@ -280,11 +281,12 @@ function renderMain() {
   const isBook = state.mediaType === "book";
   const filters = [["all", "Übersicht"], ["read", statusLabel("read")], ["reading", statusLabel("reading")],
     ["want", statusLabel("want")], ["dropped", statusLabel("dropped")], ["highlight", "★ Highlights"]];
-  if (isBook) filters.push(["archive", "📦 Archiv"], ["every", "Alle"]);
-  const counts = { all: 0, read: 0, reading: 0, want: 0, dropped: 0, highlight: 0, archive: 0, every: mediaBooks.length };
+  if (isBook) filters.push(["pick", "🏆 Empfehlungen"], ["archive", "📦 Archiv"], ["every", "Alle"]);
+  const counts = { all: 0, read: 0, reading: 0, want: 0, dropped: 0, highlight: 0, pick: 0, archive: 0, every: mediaBooks.length };
   mediaBooks.forEach((b) => { const s = b.status || "read"; if (counts[s] != null) counts[s]++;
     if (OVERVIEW_STATUS.includes(s)) counts.all++;
-    if (b.highlight) counts.highlight++; });
+    if (b.highlight) counts.highlight++;
+    if (b.pick) counts.pick++; });
   const list = liveList();
 
   main.innerHTML = `
@@ -352,6 +354,7 @@ function rowHTML(b) {
       <div class="row-author">${esc(b.author || "Unbekannt")}</div>
       <div class="b-meta">${b.rating ? `<span class="b-stars">${stars(b.rating)}</span>` : ""}${yr ? `<span class="b-year">${yr}</span>` : ""}</div>
       ${watchHintHTML(b)}
+      ${b.pick && b.pick_note ? `<div class="row-pick">🏆 ${esc(b.pick_note)}</div>` : ""}
     </div>
     ${st}
   </div>`;
@@ -360,6 +363,7 @@ function rowHTML(b) {
 function statusFiltered() {
   let list = state.books.filter((b) => (b.media_type || "book") === state.mediaType);
   if (state.filter === "highlight") list = list.filter((b) => b.highlight);
+  else if (state.filter === "pick") list = list.filter((b) => b.pick);
   else if (state.filter === "all") list = list.filter((b) => OVERVIEW_STATUS.includes(b.status || "read"));
   else if (state.filter !== "every") list = list.filter((b) => (b.status || "read") === state.filter);
   return list;
@@ -925,6 +929,7 @@ function bookFormHTML(b, isNew) {
           <div class="stars-input" id="stars">${[1,2,3,4,5].map((n) =>
             `<span class="s ${b.rating >= n ? "on" : ""}" data-n="${n}">★</span>`).join("")}</div>
           <button type="button" class="hl-toggle ${b.highlight ? "on" : ""}" id="hlToggle" title="Als Highlight markieren">★ Highlight</button>
+          ${mt === "book" ? `<button type="button" class="hl-toggle pick-toggle ${b.pick ? "on" : ""}" id="pickToggle" title="Als Empfehlung markieren">🏆 Empfehlung</button>` : ""}
         </div>
         <div class="dh-facts">${facts}</div>
         <div class="web-rating" id="webRating">${webRatingHTML(b)}</div>
@@ -938,6 +943,10 @@ function bookFormHTML(b, isNew) {
       <div class="watch-box" id="watchBox"><span class="spin dark"></span> wird geprüft …</div>
     </div>` : ""}
     <div id="klappentext">${klappentextHTML(b)}</div>
+
+    ${mt === "book" ? `<label class="fld pick-fld" id="pickFld" style="${b.pick ? "" : "display:none"}">
+      <span class="lbl">🏆 Warum lesen?</span>
+      <textarea class="input" id="f_picknote" placeholder="z. B. Klassiker, verändert den Blick auf …">${esc(b.pick_note || "")}</textarea></label>` : ""}
 
     <div class="status-pick" id="statusPick">
       ${statusKeys(mt).map((k) => `<button data-s="${k}" class="${(b.status || "read") === k ? "on" : ""}">${statusLabel(k, mt)}</button>`).join("")}
@@ -1191,6 +1200,11 @@ function bindForm(b, isNew) {
   // Highlight-Schalter
   const hlBtn = $("#hlToggle");
   if (hlBtn) hlBtn.onclick = () => { draft.highlight = !draft.highlight; hlBtn.classList.toggle("on", draft.highlight); };
+  // Empfehlungs-Schalter (blendet „Warum lesen?“ ein)
+  draft.pick = !!draft.pick;
+  const pickBtn = $("#pickToggle"), pickFld = $("#pickFld");
+  if (pickBtn) pickBtn.onclick = () => { draft.pick = !draft.pick; pickBtn.classList.toggle("on", draft.pick);
+    if (pickFld) pickFld.style.display = draft.pick ? "" : "none"; };
 
   // Status (blendet bei „Abgebrochen“ das Grund-Feld ein)
   const abandonFld = $("#abandonFld");
@@ -1241,6 +1255,8 @@ function bindForm(b, isNew) {
       rec.isbn13 = val("f_isbn") || draft.isbn13 || null;
       rec.original_title = val("f_origtitle") || draft.original_title || null;
       rec.category = val("f_category") || null;
+      rec.pick = !!draft.pick;
+      rec.pick_note = draft.pick ? (val("f_picknote").trim() || null) : null;
     }
     if (!rec.title) return toast("Titel fehlt");
     saveBtn.innerHTML = '<span class="spin"></span>'; saveBtn.disabled = true;

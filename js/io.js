@@ -16,6 +16,9 @@ const EXPORT_COLUMNS = [
   ["Runtime", "runtime"],
   ["Rating", "rating"],
   ["Highlight", "highlight"],
+  ["Pick", "pick"],
+  ["PickNote", "pick_note"],
+  ["Category", "category"],
   ["Status", "status"],
   ["AbandonReason", "abandon_reason"],
   ["Started", "date_started"],
@@ -89,6 +92,9 @@ const FIELD_ALIASES = {
   notes: ["notes", "notizen", "my review", "review", "gedanken", "kommentar"],
   highlight: ["highlight", "favorit", "favourite", "favorite"],
   abandon_reason: ["abandonreason", "abandon_reason", "abbruchgrund", "warum abgebrochen"],
+  pick: ["pick", "empfehlung"],
+  pick_note: ["picknote", "pick_note", "warum lesen"],
+  category: ["category", "kategorie"],
   media_type: ["type", "typ", "medium", "media_type"],
   season: ["season", "staffel"],
   episode: ["episode", "folge"],
@@ -102,6 +108,7 @@ function cleanIsbn(v) { return v ? String(v).replace(/[^0-9Xx]/g, "") : ""; }
 function mapStatus(v) {
   const s = String(v || "").toLowerCase();
   if (/abgebrochen|dropped|abandon|dnf|did not finish/.test(s)) return "dropped";
+  if (/archiv/.test(s)) return "archive";
   if (/to-?read|to read|want|will|wunsch|merk/.test(s)) return "want";
   if (/currently|reading|lese|gerade/.test(s)) return "reading";
   return "read";
@@ -151,6 +158,9 @@ export async function parseImportFile(file) {
       runtime: get("runtime"),
       rating: get("rating"),
       highlight: get("highlight"),
+      pick: get("pick"),
+      pick_note: get("pick_note"),
+      category: get("category"),
       status: get("status"),
       abandon_reason: get("abandon_reason"),
       date_started: get("date_started"),
@@ -200,6 +210,9 @@ function normalizeRecord(r) {
     description: r.description ? String(r.description).trim() : null,
     rating: rating && rating >= 1 && rating <= 5 ? rating : null,
     highlight: toBool(r.highlight),
+    pick: toBool(r.pick),
+    pick_note: r.pick_note ? String(r.pick_note).trim() : null,
+    category: mt === "book" && r.category ? String(r.category).trim() : null,
     status: mapStatus(r.status),
     abandon_reason: r.abandon_reason ? String(r.abandon_reason).trim() : null,
     date_started: toDate(r.date_started),
