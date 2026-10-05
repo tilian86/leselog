@@ -77,6 +77,8 @@ const DEMO_BOOKS = [
   { id: "d6", title: "Der Turm", author: "Uwe Tellkamp", page_count: 976, published_year: 2008, publisher: "Suhrkamp", status: "dropped", rating: 2, abandon_reason: "Nach 200 Seiten hängengeblieben – zu ausschweifend, kam nicht rein.", date_started: "2026-02-01", cover_url: null },
   { id: "m1", media_type: "movie", title: "Matrix", author: "Lana & Lilly Wachowski", published_year: 1999, runtime: 136, status: "read", rating: 5, date_finished: "2026-02-10", web_rating: 4.1, web_rating_count: 24000, tmdb_id: 603, cover_url: "https://image.tmdb.org/t/p/w500/iVmDLujHcV1zaMnaahKWn4TcCS6.jpg", description: "Der Hacker Neo entdeckt, dass die Wirklichkeit eine Computersimulation ist, und schließt sich dem Widerstand gegen die Maschinen an." },
   { id: "s1", media_type: "series", title: "Dark", author: "Baran bo Odar, Jantje Friese", published_year: 2017, total_seasons: 3, total_episodes: 26, season: 2, episode: 5, status: "reading", rating: 5, web_rating: 4.3, web_rating_count: 5200, tmdb_id: 70523, cover_url: "https://image.tmdb.org/t/p/w500/7yQyDCqSazrYTnmxdQLAZ8YDH87.jpg", description: "In der Kleinstadt Winden verschwinden Kinder – eine Zeitreise-Mystery über vier Familien und die Abgründe der Zeit." },
+  { id: "m2", media_type: "movie", title: "Dune: Part Two", author: "Denis Villeneuve", published_year: 2024, runtime: 166, status: "want", rating: 0, tmdb_id: 693134, cover_url: null },
+  { id: "s2", media_type: "series", title: "Severance", author: "Dan Erickson", published_year: 2022, total_seasons: 2, status: "want", rating: 0, tmdb_id: 95396, cover_url: null },
 ];
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -284,7 +286,7 @@ function renderMain() {
   if (isBook) filters.push(["pick", "🏆 Empfehlungen"], ["archive", "📦 Archiv"], ["every", "Alle"]);
   const counts = { all: 0, read: 0, reading: 0, want: 0, dropped: 0, highlight: 0, pick: 0, archive: 0, every: mediaBooks.length };
   mediaBooks.forEach((b) => { const s = b.status || "read"; if (counts[s] != null) counts[s]++;
-    if (OVERVIEW_STATUS.includes(s)) counts.all++;
+    if (OVERVIEW_STATUS.includes(s) || s === "want") counts.all++;
     if (b.highlight) counts.highlight++;
     if (b.pick) counts.pick++; });
   const list = liveList();
@@ -299,10 +301,10 @@ function renderMain() {
       `<button data-f="${k}" class="${state.filter === k ? "on" : ""}">${l}<span class="seg-count">${counts[k]}</span></button>`).join("")}</div>
     ${isBook ? categoryChipsHTML() : ""}
     <div style="height:16px"></div>
-    <div id="shelfWrap">${shelfHTML(list)}</div>`;
+    <div id="shelfWrap">${overviewHTML(list)}</div>`;
 
   const si = $("#searchInp");
-  si.oninput = () => { state.search = si.value; $("#shelfWrap").innerHTML = shelfHTML(liveList()); bindCards(); };
+  si.oninput = () => { state.search = si.value; $("#shelfWrap").innerHTML = overviewHTML(liveList()); bindCards(); };
   $("#sortBtn").onclick = openSortSheet;
   $("#layoutBtn").onclick = () => {
     state.layout = state.layout === "grid" ? "list" : "grid";
@@ -319,6 +321,7 @@ function renderMain() {
 // Kategorie-Chips unter den Reitern: zählen innerhalb des gewählten Reiters
 function categoryChipsHTML() {
   const base = statusFiltered();
+  if (state.filter === "all") base.push(...wantList());
   const n = {};
   base.forEach((b) => { const c = b.category || NO_CAT; n[c] = (n[c] || 0) + 1; });
   const cats = [...CATEGORIES.map((c) => c[0]), NO_CAT].filter((c) => n[c] || c === state.category);
@@ -327,6 +330,34 @@ function categoryChipsHTML() {
     <button data-c="" class="${state.category ? "" : "on"}">Alle Kategorien</button>
     ${cats.map((c) => `<button data-c="${esc(c)}" class="${state.category === c ? "on" : ""}">${catIcon(c)} ${esc(c)}<span class="seg-count">${n[c] || 0}</span></button>`).join("")}
   </div>`;
+}
+
+// Übersicht: oben „Will lesen“/„Will sehen“ als kompakte Reihe (neueste zuerst),
+// darunter wie bisher Gelesen + Lese gerade. Ohne Will-Einträge (oder bei Suche) unverändert.
+const WANT_ROW_MAX = 12;   // Kacheln-Ansicht: so viele in der waagerechten Reihe
+const WANT_LIST_MAX = 3;   // Listen-Ansicht: so viele Zeilen
+function wantList() {      // state.books ist nach created_at absteigend sortiert
+  return state.books.filter((b) => (b.media_type || "book") === state.mediaType && b.status === "want");
+}
+function overviewHTML(list) {
+  const want = (state.filter === "all" && !state.search)
+    ? wantList().filter((b) => !state.category || (b.category || NO_CAT) === state.category) : [];
+  if (!want.length) return shelfHTML(list);
+  const isList = state.layout === "list";
+  const shown = want.slice(0, isList ? WANT_LIST_MAX : WANT_ROW_MAX);
+  const more = want.length - shown.length;
+  const head = `<div class="cat-head ov-head">🔖 ${statusLabel("want")} <span>${want.length}</span>` +
+    `<button class="ov-all" data-goto="want">Alle anzeigen ›</button></div>`;
+  const body = isList
+    ? `<div class="shelf-list">${shown.map(rowHTML).join("")}</div>` +
+      (more ? `<button class="ov-more" data-goto="want">Alle ${want.length} anzeigen ›</button>` : "")
+    : `<div class="want-row">${shown.map(bookCardHTML).join("")}` +
+      (more ? `<button class="want-more" data-goto="want"><b>+${more}</b>Alle anzeigen</button>` : "") + `</div>`;
+  if (!list.length) return `<section class="want-sec">${head}${body}</section>`;
+  // Überschrift für den Rest – bei „Nach Kategorie“ übernehmen das die Kategorie-Überschriften
+  const restHead = (state.sort === "category" && state.mediaType === "book") ? "" :
+    `<div class="cat-head">${MEDIA.find((m) => m[0] === state.mediaType)[1]} ${statusLabel("read")} &amp; ${statusLabel("reading")} <span>${list.length}</span></div>`;
+  return `<section class="want-sec">${head}${body}</section>${restHead}${shelfHTML(list)}`;
 }
 
 function shelfHTML(list) {
@@ -415,6 +446,11 @@ function openSortSheet() {
 function bindCards() {
   document.querySelectorAll(".book, .row-book, .rank-row, .drop-row").forEach((c) =>
     c.onclick = () => openDetail(state.books.find((b) => b.id === c.dataset.id)));
+  document.querySelectorAll("[data-goto]").forEach((x) => x.onclick = () => {
+    state.filter = x.dataset.goto; renderMain(); window.scrollTo({ top: 0 });
+    const on = document.querySelector(".seg button.on");
+    if (on) on.scrollIntoView({ block: "nearest", inline: "nearest" });
+  });
   fillWatchHints();
 }
 
@@ -873,7 +909,8 @@ function showCandidates(results, parsed) {
 // ================================================================
 //  Review / Formular (neu ODER bearbeiten)
 // ================================================================
-// In der Übersicht („Alle") bewusst ohne Will-lesen/Abgebrochen – die haben eigene Reiter.
+// Hauptregal der Übersicht: Gelesen + Lese gerade. „Will lesen/sehen“ steht darüber als eigene Reihe
+// (overviewHTML), Abgebrochen und Archiv nur in ihren Reitern.
 const OVERVIEW_STATUS = ["read", "reading"];
 const STATUS_KEYS = ["read", "reading", "want", "dropped"];
 const statusKeys = (mt) => isMediaType(mt) ? STATUS_KEYS : [...STATUS_KEYS, "archive"];
