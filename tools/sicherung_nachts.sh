@@ -2,7 +2,7 @@
 # Nächtliche Drive-Sicherung aller Leselog-EPUBs (launchd 03:45, de.florianthiel.leselog-drive-sicherung).
 # macOS lässt Hintergrund-Python nicht in den Google-Drive-Ordner – deshalb erst in einen lokalen
 # Spiegel (~/.leselog-sicherung/E-Books) holen und den per rclone nach Drive schieben.
-# Geht etwas schief, kommt ein Push auf den Störungen-Kanal.
+# Geht etwas schief, kommt ein Push in die Pushfunk-App (seit 06.10.2026, vorher ntfy).
 export PATH="$HOME/.local/node/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 SPIEGEL="$HOME/.leselog-sicherung/E-Books"
 DRIVE="gdrive:Diverses/E-Books (Leselog-Sicherung)"
@@ -20,8 +20,7 @@ if [ $rc -eq 0 ]; then
   [ $rc -ne 0 ] && out="rclone nach Drive: $(echo "$sync" | grep -i error | tail -1)"
 fi
 if [ $rc -ne 0 ]; then
-  topic=$(cat "$HOME/.config/funk-stoerungen/ntfy-topic" 2>/dev/null)
-  [ -n "$topic" ] && PUSH_TOPIC="$topic" PUSH_TAGS=books "$HOME/Projects/apps/claude-limit-waechter/push.sh" \
-    "⚠️ Leselog-Sicherung" "Drive-Sicherung der EPUBs hat gehakt: $(echo "$out" | tail -1)"
+  PUSH_APP=pushfunk PUSH_QUELLE=leselog-sicherung "$HOME/Projects/apps/claude-limit-waechter/push.sh" \
+    "⚠️ 📚 Leselog-Sicherung" "Drive-Sicherung der EPUBs hat gehakt: $(echo "$out" | tail -1)"
 fi
 exit $rc
