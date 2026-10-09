@@ -1,0 +1,7 @@
+{
+  // Kurzlinks fürs Teilen: buch.florian-s-thiel.workers.dev/<slug> – reicht alles an „leselog-dateien“ weiter.
+  "name": "buch",
+  "main": "index.js",
+  "compatibility_date": "2025-01-01",
+  "services": [{ "binding": "DATEIEN", "service": "leselog-dateien" }]
+}

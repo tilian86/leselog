@@ -1,9 +1,9 @@
 // Leselog Service Worker – App-Shell offline verfügbar machen.
-const CACHE = "leselog-v9";
+const CACHE = "leselog-v10";
 const SHELL = [
   "./",
   "./index.html",
-  "./css/style.css?v=9",
+  "./css/style.css?v=10",
   "./js/config.js",
   "./js/supa.js",
   "./js/enrich.js",
@@ -12,7 +12,7 @@ const SHELL = [
   "./js/epub.js",
   "./js/io.js",
   "./js/tmdb.js",
-  "./js/app.js?v=9",
+  "./js/app.js?v=10",
   "./manifest.webmanifest",
   "./icons/icon-192.png",
   "./icons/icon-512.png",

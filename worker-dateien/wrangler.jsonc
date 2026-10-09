@@ -8,6 +8,7 @@
   "vars": {
     "SUPABASE_URL": "https://wejvvldovywrernuujgt.supabase.co",
     "SUPABASE_KEY": "sb_publishable_ZyFVdlb-Kxuvo6T5SJ43cw_I5l6LBTz",
+    "KURZ_ORIGIN": "https://buch.florian-s-thiel.workers.dev",
     "ALLOWED_ORIGINS": "https://tilian86.github.io,http://localhost:8080,http://127.0.0.1:8080"
   }
 }

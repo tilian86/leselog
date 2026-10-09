@@ -2,7 +2,7 @@
 import { CONFIG } from "./config.js";
 import { currentSession, onAuth, signInPassword, signUpPassword, signOut,
          fetchBooks, insertBook, insertBooks, updateBook, removeBook,
-         uploadEpub, epubSignedUrl, removeEpub, fetchChart } from "./supa.js";
+         uploadEpub, epubSignedUrl, shareLink, removeEpub, fetchChart } from "./supa.js";
 import { searchBooks, searchByISBN, guessReadingDays, parseUtterance, storeLinks, fetchExtras, searchCovers, findPreview } from "./enrich.js";
 import { startDictation, hasMic } from "./audio.js";
 import { startScanner } from "./scan.js";
@@ -68,6 +68,9 @@ const SORTS = [
   ["rating", "Beste Bewertung"],
   ["pages", "Seitenzahl"],
 ];
+
+// Steht unten im Statistik-Tab; bei jeder neuen Fassung mit ?v= in index.html und sw.js hochzählen.
+const APP_VERSION = "10";
 
 // Vorschau-Modus (index.html#demo): Design ohne Login/DB ansehen. In Produktion unsichtbar.
 const DEMO = location.hash.includes("demo");
@@ -169,9 +172,10 @@ function epubBoxHTML(b) {
       <div class="epub-file">📎 <span>${esc(b.epub_name || "Buch.epub")}</span>${b.epub_size ? `<span class="epub-size">${fmtSize(b.epub_size)}</span>` : ""}</div>
       <div class="epub-actions">
         <button type="button" class="btn sm" id="epubDl">Herunterladen</button>
-        <button type="button" class="btn sm" id="epubShare">Teilbarer Link</button>
+        <button type="button" class="btn sm" id="epubShare">📤 Teilen</button>
         <button type="button" class="btn sm ghost" id="epubDel">Entfernen</button>
       </div>
+      <div id="epubShareBox"></div>
     </div>`;
   }
   return `<button type="button" class="btn block" id="epubAdd">📎 EPUB anhängen</button>
@@ -631,7 +635,8 @@ function renderStats(main) {
     <input type="file" id="impFile" accept=".csv,.json,text/csv,application/json" class="hidden">
 
     <div style="height:24px"></div>
-    <button class="btn ghost block" id="logoutBtn" style="color:var(--ink-soft)">Abmelden</button>`;
+    <button class="btn ghost block" id="logoutBtn" style="color:var(--ink-soft)">Abmelden</button>
+    <div class="app-version">Leselog · Version ${APP_VERSION}</div>`;
   bindCards();
   const curYear = new Date().getFullYear();
   if ($("#yPrev")) $("#yPrev").onclick = () => { state.statsYear = (state.statsYear || curYear) - 1; renderMain(); };
@@ -1382,14 +1387,29 @@ function bindEpub(b) {
     dl.disabled = false;
   };
 
+  // Teilen: Kurzlink auf eine Seite mit Cover + Klappentext (WhatsApp zeigt das als Vorschau), Download 30 Tage.
   const share = $("#epubShare");
   if (share) share.onclick = async () => {
     share.disabled = true;
     try {
-      const url = await epubSignedUrl(b.epub_path, 60 * 60 * 24 * 30, false, b.epub_name);
-      try { await navigator.clipboard.writeText(url); toast("Link kopiert – 30 Tage gültig"); }
-      catch (_) { prompt("Teilbarer Link (30 Tage gültig):", url); }
-    } catch (e) { toast("Link fehlgeschlagen"); }
+      const { url } = await shareLink(b, b.cover_url || amazonCover(b));
+      const text = `📖 ${b.title}${b.author ? " – " + b.author : ""}`;
+      const sbox = $("#epubShareBox");
+      sbox.innerHTML = `<div class="share-link">
+        <a href="${esc(url)}" target="_blank" rel="noopener">${esc(url.replace(/^https?:\/\//, ""))}</a>
+        <div class="share-btns">${navigator.share ? `<button type="button" class="btn sm" id="shareGo">📤 Senden …</button>` : ""}<button type="button" class="btn sm" id="shareCopy">Kopieren</button></div>
+        <div class="epub-hint">Download-Link 30 Tage gültig. WhatsApp &amp; Co. zeigen Cover und Klappentext als Vorschau.</div>
+      </div>`;
+      const senden = () => navigator.share({ title: b.title, text, url }).catch(() => {});
+      if ($("#shareGo")) $("#shareGo").onclick = senden;
+      $("#shareCopy").onclick = async () => {
+        try { await navigator.clipboard.writeText(url); toast("Link kopiert"); }
+        catch (_) { prompt("Link zum Teilen:", url); }
+      };
+      // Direkt das Teilen-Menü öffnen; klappt das nicht (iOS will einen frischen Tipp), bleibt „Senden …“.
+      if (navigator.share) await senden();
+      else { try { await navigator.clipboard.writeText(url); toast("Link kopiert – 30 Tage gültig"); } catch (_) {} }
+    } catch (e) { toast(e.message || "Link fehlgeschlagen"); }
     share.disabled = false;
   };
 

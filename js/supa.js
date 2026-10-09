@@ -126,6 +126,15 @@ export async function epubSignedUrl(path, expiresSec = 3600, download = false, n
   return data.signedUrl;
 }
 
+// Kurzlink zum Teilen (buch.florian-s-thiel.workers.dev/<titel>-xxxxxx): Seite mit Cover, Klappentext und
+// Download-Knopf, 30 Tage gültig. Alte Supabase-Pfade bekommen weiter den langen signierten Link.
+export async function shareLink(b, cover = "") {
+  if (!isR2(b.epub_path)) return { url: await epubSignedUrl(b.epub_path, 60 * 60 * 24 * 30, false, b.epub_name) };
+  const book = b.epub_path.split("/").pop().replace(/\.epub$/, "");
+  return fileApi("/teilen", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ book, title: b.title, author: b.author, desc: b.description, cover, name: b.epub_name }) });
+}
+
 export async function removeEpub(path) {
   if (isR2(path)) {
     const book = path.split("/").pop().replace(/\.epub$/, "");

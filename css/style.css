@@ -299,6 +299,11 @@ a { color: var(--accent); }
 .epub-size { font-weight: 400; color: var(--ink-soft); font-size: 12.5px; flex-shrink: 0; }
 .epub-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 11px; }
 .epub-actions .btn.sm { flex: 1 1 auto; }
+.share-link { margin-top: 11px; padding: 11px 12px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--card); }
+.share-link a { color: var(--accent); font-size: 14px; font-weight: 600; text-decoration: none; overflow-wrap: anywhere; }
+.share-btns { display: flex; gap: 8px; margin-top: 9px; }
+.share-btns .btn.sm { flex: 1 1 auto; }
+.app-version { margin-top: 14px; text-align: center; font-size: 12px; color: var(--ink-faint); }
 .epub-uploading { display: flex; align-items: center; gap: 9px; padding: 13px; color: var(--ink-soft);
   background: var(--paper-2); border: 1px solid var(--line); border-radius: 12px; font-size: 14px; }
 .secondary-row { display: flex; gap: 10px; margin-top: 14px; }
