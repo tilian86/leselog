@@ -132,7 +132,8 @@ export async function shareLink(b, cover = "") {
   if (!isR2(b.epub_path)) return { url: await epubSignedUrl(b.epub_path, 60 * 60 * 24 * 30, false, b.epub_name) };
   const book = b.epub_path.split("/").pop().replace(/\.epub$/, "");
   return fileApi("/teilen", { method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ book, title: b.title, author: b.author, desc: b.description, cover, name: b.epub_name }) });
+    body: JSON.stringify({ book, title: b.title, author: b.author, desc: b.description, cover, name: b.epub_name,
+      sprache: b.sprache || "", de_titel: b.de_titel || "" }) });
 }
 
 export async function removeEpub(path) {

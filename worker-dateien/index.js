@@ -79,7 +79,8 @@ function teilenSeite(r, base, abgelaufen) {
   const titel = r.title || "Ein Buch";
   const kopf = titel + (r.author ? " – " + r.author : "");
   const text = klartext(r.desc);
-  const og = kurz(text, 220) || (r.author ? "von " + r.author : "E-Book");
+  const englisch = r.sprache === "en";
+  const og = (englisch ? "🇬🇧 Englische Ausgabe. " : "") + (kurz(text, 200) || (r.author ? "von " + r.author : "E-Book"));
   const bild = r.cover ? `${base}/cover.jpg` : "";
   const tage = r.t ? Math.max(1, Math.round((r.e - r.t) / 86400)) : 30;
   return `<!doctype html><html lang="de"><head><meta charset="utf-8">
@@ -104,6 +105,7 @@ main{max-width:560px;margin:0 auto;padding:28px 18px 40px}
 .kopf>div:last-child{min-width:0}
 h1{font-family:var(--serif);font-weight:600;font-size:25px;line-height:1.2;margin:0 0 6px;hyphens:auto;-webkit-hyphens:auto;overflow-wrap:break-word}
 .autor{color:var(--soft);font-size:16px}
+.sprache{margin-top:6px;color:var(--soft);font-size:13.5px;line-height:1.35}
 .knopf{display:block;margin:24px 0 8px;padding:15px;border-radius:14px;background:var(--accent);color:#fff;text-align:center;font-weight:650;font-size:16.5px;text-decoration:none}
 .hinweis{color:var(--soft);font-size:14px;line-height:1.45;text-align:center;margin:0 4px}
 .hinweis b{color:var(--ink);font-weight:600}
@@ -113,11 +115,11 @@ h1{font-family:var(--serif);font-weight:600;font-size:25px;line-height:1.2;margi
 footer{margin-top:34px;color:var(--faint);font-size:12.5px;text-align:center}
 </style></head><body><main>
 <div class="kopf">${bild ? `<div class="cover"><img src="${escH(bild)}" alt=""></div>` : ""}
-<div><h1>${escH(titel)}</h1>${r.author ? `<div class="autor">${escH(r.author)}</div>` : ""}</div></div>
+<div><h1>${escH(titel)}</h1>${r.author ? `<div class="autor">${escH(r.author)}</div>` : ""}${englisch ? `<div class="sprache">🇬🇧 Englische Ausgabe${r.de_titel ? ` · auf Deutsch: „${escH(r.de_titel)}“` : ""}</div>` : ""}</div></div>
 ${abgelaufen
   ? `<div class="weg">Dieser Link ist abgelaufen. Frag einfach nach einem neuen 🙂</div>`
   : `<a class="knopf" href="${escH(base)}/epub">📖 E-Book herunterladen</a>
-<div class="hinweis">Dahinter steckt die <b>EPUB-Datei</b>${r.size ? " (" + groesse(r.size) + ")" : ""} – für E‑Reader und Lese‑Apps wie Apple Bücher, Tolino, Kobo, Google Play Bücher oder ElevenReader (Kindle über „Send to Kindle“).</div>
+<div class="hinweis">Dahinter steckt die <b>${englisch ? "englische " : ""}EPUB-Datei</b>${r.size ? " (" + groesse(r.size) + ")" : ""} – für E‑Reader und Lese‑Apps wie Apple Bücher, Tolino, Kobo, Google Play Bücher oder ElevenReader (Kindle über „Send to Kindle“).</div>
 <div class="frist">⏳ Der Download-Link funktioniert ${tage === 1 ? "einen Tag" : tage + " Tage"}, bis ${datumDE(r.e)}.<br>Einmal heruntergeladen, bleibt die Datei für immer bei dir.</div>`}
 ${text ? `<div class="text">${escH(kurz(text, 2500))}</div>` : ""}
 <footer>Geteilt mit Leselog</footer>
@@ -252,15 +254,19 @@ export default {
       if (!f) return json({ error: "Keine EPUB-Datei zu diesem Buch" }, 404, h);
       const ttl = Math.min(Math.max(Number(b.ttl) || 60 * 60 * 24 * 30, 3600), 60 * 60 * 24 * 30);
       // Cover: eigenes aus R2, sonst die hinterlegte Adresse (Google/Amazon …) – der Worker reicht es durch.
+      // Englische Originaldatei an einem deutschen Eintrag: lieber das Cover aus der EPUB (passt zur Datei).
       let cover = "";
       const eigen = String(b.cover || "").match(/\/c\/([0-9a-f-]{36})\.jpg/);
+      const englisch = b.sprache === "en";
       if (eigen && UUID.test(eigen[1]) && eigen[1] === b.book) cover = "r2";
+      else if (englisch && await env.BUCKET.head("covers/" + b.book + ".jpg")) cover = "r2";
       else if (/^https?:\/\//.test(b.cover || "")) cover = String(b.cover).slice(0, 1000);
       else if (await env.BUCKET.head("covers/" + b.book + ".jpg")) cover = "r2";
       const rec = {
         uid, book: b.book, t: Math.floor(Date.now() / 1000), e: Math.floor(Date.now() / 1000) + ttl, size: f.size,
         title: String(b.title || "").slice(0, 300), author: String(b.author || "").slice(0, 300),
         desc: klartext(b.desc).slice(0, 4000), name: safeName(b.name || (b.title || "Buch") + ".epub"), cover,
+        sprache: englisch ? "en" : "", de_titel: englisch ? String(b.de_titel || "").slice(0, 300) : "",
       };
       const slug = slugify(rec.title) + "-" + zufall(6);
       await env.BUCKET.put("teilen/" + slug + ".json", JSON.stringify(rec), { httpMetadata: { contentType: "application/json" } });

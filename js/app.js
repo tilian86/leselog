@@ -70,7 +70,7 @@ const SORTS = [
 ];
 
 // Steht unten im Statistik-Tab; bei jeder neuen Fassung mit ?v= in index.html und sw.js hochzählen.
-const APP_VERSION = "10";
+const APP_VERSION = "11";
 
 // Vorschau-Modus (index.html#demo): Design ohne Login/DB ansehen. In Produktion unsichtbar.
 const DEMO = location.hash.includes("demo");
@@ -166,10 +166,19 @@ function watchBoxHTML(wp) {
   return html;
 }
 
+// Archiv-EPUBs sind oft die englische Originalausgabe, auch wenn der Eintrag auf die deutsche umgestellt ist.
+// Erkennbar daran, dass der Dateiname mit dem Originaltitel beginnt.
+function epubIstOriginal(b) {
+  if (!b.original_title || !b.epub_name) return false;
+  const n = (x) => String(x).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  const o = n(b.original_title).slice(0, 25);
+  return o.length >= 3 && n(b.epub_name).startsWith(o);
+}
 function epubBoxHTML(b) {
   if (b.epub_path) {
     return `<div class="epub-has">
       <div class="epub-file">📎 <span>${esc(b.epub_name || "Buch.epub")}</span>${b.epub_size ? `<span class="epub-size">${fmtSize(b.epub_size)}</span>` : ""}</div>
+      ${epubIstOriginal(b) ? `<div class="epub-hint">🇬🇧 Die Datei ist die englische Originalausgabe.</div>` : ""}
       <div class="epub-actions">
         <button type="button" class="btn sm" id="epubDl">Herunterladen</button>
         <button type="button" class="btn sm" id="epubShare">📤 Teilen</button>
@@ -1402,10 +1411,15 @@ function bindEpub(b) {
   if (share) share.onclick = async () => {
     share.disabled = true;
     try {
-      const { url } = await shareLink(b, b.cover_url || amazonCover(b));
+      // Englische Datei an deutschem Eintrag: unter dem Originaltitel teilen, mit Hinweis auf die deutsche Ausgabe.
+      const engl = epubIstOriginal(b);
+      const titel = engl ? b.original_title : b.title;
+      const deTitel = engl && b.title !== b.original_title ? b.title : "";
+      const { url } = await shareLink({ ...b, title: titel, sprache: engl ? "en" : "", de_titel: deTitel }, b.cover_url || amazonCover(b));
       const kurz = kurzbeschreibung(b.description);
-      const text = `📖 ${b.title}${b.author ? " – " + b.author : ""}` + (kurz ? `\n\n${kurz}` : "") +
-        `\n\n📥 E-Book (EPUB) zum Herunterladen – Link 30 Tage gültig:\n${url}`;
+      const text = `📖 ${titel}${b.author ? " – " + b.author : ""}` +
+        (engl ? `\n🇬🇧 Englische Ausgabe${deTitel ? ` (auf Deutsch: „${deTitel}“)` : ""}` : "") + (kurz ? `\n\n${kurz}` : "") +
+        `\n\n📥 E-Book (EPUB${engl ? ", englisch" : ""}) zum Herunterladen – Link 30 Tage gültig:\n${url}`;
       const sbox = $("#epubShareBox");
       sbox.innerHTML = `<div class="share-link">
         <a href="${esc(url)}" target="_blank" rel="noopener">${esc(url.replace(/^https?:\/\//, ""))}</a>
@@ -1413,7 +1427,7 @@ function bindEpub(b) {
         <div class="epub-hint">Download-Link 30 Tage gültig. WhatsApp &amp; Co. zeigen Cover und Klappentext als Vorschau.</div>
       </div>`;
       // Link steht im Text (nicht extra als url), damit WhatsApp alles in einer Nachricht samt Vorschau schickt.
-      const senden = () => navigator.share({ title: b.title, text }).catch(() => {});
+      const senden = () => navigator.share({ title: titel, text }).catch(() => {});
       if ($("#shareGo")) $("#shareGo").onclick = senden;
       $("#shareCopy").onclick = async () => {
         try { await navigator.clipboard.writeText(text); toast("Nachricht mit Link kopiert"); }

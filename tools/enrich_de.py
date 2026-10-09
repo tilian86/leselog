@@ -1,11 +1,14 @@
 # -*- coding: utf-8 -*-
 """Holt fehlende Cover/Klappentexte nach – bevorzugt fuer die deutschen Ausgaben.
 
+Deutsche Klappentexte kommen zuerst von der DNB (Verlagstext per ISBN, ohne
+Schluessel und ohne Kontingent), danach von Google Books.
+
 Laeuft taeglich per launchd. Ist nichts zu tun, endet das Skript sofort.
 Ist Googles Tageskontingent erschoepft (403), bricht es sauber ab und versucht
 es am naechsten Tag erneut. Es aendert nur, was leer ist – nie vorhandene Daten.
 """
-import json, re, time, unicodedata, subprocess, urllib.request, urllib.parse, sys
+import json, re, time, html, unicodedata, subprocess, urllib.request, urllib.parse, sys
 from datetime import datetime
 
 GKEY = "AIzaSyC6NrAnOw5HqnbyUt6_IA7VyHl623FHUQU"
@@ -38,6 +41,74 @@ def req(url, hdrs=None, data=None, method=None, timeout=30):
 
 class QuotaExhausted(Exception): pass
 
+DE_WORTE = re.compile(r"\b(der|die|das|und|nicht|ist|eine|sich|von|dem|den|mit)\b")
+def ist_deutsch(t):
+    return len(DE_WORTE.findall((t or "").lower())) >= 3
+
+SRU = "https://services.dnb.de/sru/dnb?"
+MARC = "{http://www.loc.gov/MARC21/slim}"
+WERBUNG = re.compile(r"farbschnitt|neues cover|frischen look|ausverkauft|jetzt als taschenbuch|jetzt im taschenbuch", re.I)
+
+def _hol(url):
+    with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent":"Leselog/1.0"}), timeout=30) as x:
+        return x.read().decode("utf-8", "replace")
+
+def _klappentext_url_liste(cql, titel=None):
+    """Blurb-Links (MVB-Verlagstexte) der DNB-Datensaetze zu einer CQL-Suche."""
+    from xml.etree import ElementTree as ET
+    q = urllib.parse.urlencode({"version":"1.1", "operation":"searchRetrieve", "query":cql,
+                                "recordSchema":"MARC21-xml", "maximumRecords":"20"})
+    out = []
+    for rec in ET.fromstring(_hol(SRU + q)).iter(MARC + "record"):
+        def sub(tag, code):
+            for f in rec.iter(MARC + "datafield"):
+                if f.get("tag") == tag:
+                    for s in f:
+                        if s.get("code") == code and s.text: return s.text
+        if titel and not norm(sub("245", "a") or "").startswith(norm(titel)[:20]):
+            continue
+        for f in rec.iter(MARC + "datafield"):
+            if f.get("tag") == "856":
+                for s in f:
+                    if s.get("code") == "u" and s.text and "/blurb" in s.text: out.append(s.text)
+    return out
+
+def _sauber(t):
+    t = t.replace("\ufeff", "").replace("ï»¿", "")
+    t = re.sub(r"(?is)<(script|style|head)\b.*?</\1>", " ", t)
+    t = re.sub(r"(?i)<br\s*/?>|</p>", "\n", t)
+    t = html.unescape(re.sub(r"<[^>]+>", " ", t))
+    zeilen = []
+    for z in t.splitlines():
+        z = re.sub(r"[ \t\xa0]+", " ", z).strip()
+        # Verlagswerbung (Farbschnitt, neues Cover …) satzweise entfernen
+        z = " ".join(x for x in re.split(r"(?<=[.!?])\s+", z) if not WERBUNG.search(x))
+        zeilen.append(z.lstrip(" -–"))
+    return re.sub(r"\n{2,}", "\n\n", "\n".join(zeilen)).strip()
+
+def dnb_klappentext(b):
+    """Deutscher Verlagstext aus dem DNB-Katalog: erst per ISBN, sonst eine
+    andere Ausgabe mit gleichem Titel und Autor. Ohne Schluessel, ohne Kontingent."""
+    suchen = []
+    if b.get("isbn13"): suchen.append((f"num={b['isbn13']}", None))
+    worte = [w for w in re.findall(r"[a-zäöüß0-9]+", (b.get("title") or "").lower())
+             if len(w) > 2 and w not in {"der","die","das","und","für","von","mit","the","and"}][:4]
+    teile = (b.get("author") or "").split(",")[0].split()
+    if worte and teile:
+        per = f'{teile[-1]}, {teile[0]}' if len(teile) > 1 else teile[0]
+        suchen.append((" and ".join(f"WOE={w}" for w in worte) + f' and per="{per}"', b["title"]))
+    versucht = 0
+    for cql, titel in suchen:
+        try: urls = _klappentext_url_liste(cql, titel)
+        except Exception: continue
+        for u in urls:
+            if versucht >= 4: return None
+            versucht += 1
+            try: t = _sauber(_hol(u))
+            except Exception: continue
+            if len(t) >= 80 and ist_deutsch(t): return t
+    return None
+
 def gbooks(query, lang=None):
     p = {"q":query, "key":GKEY, "country":"DE", "maxResults":"4"}
     if lang: p["langRestrict"] = lang
@@ -62,9 +133,20 @@ def main():
     books = req(f"{SUPA}/rest/v1/books?select=id,title,author,isbn13,cover_url,description,"
                 f"publisher,page_count,published_year,original_title&media_type=eq.book"
                 f"&or=(original_title.not.is.null,cover_url.is.null)", H)
-    todo = [b for b in books if b.get("original_title") or not b.get("cover_url")]
+    todo = [b for b in books if not b.get("cover_url") or (b.get("original_title")
+            and (not ist_deutsch(b.get("description")) or not b.get("page_count")))]
     if not todo:
         log("nichts zu tun"); return 0
+
+    # 1) Deutsche Klappentexte von der DNB
+    for b in todo:
+        if b.get("original_title") and not ist_deutsch(b.get("description")):
+            t = dnb_klappentext(b)
+            if t:
+                req(f"{SUPA}/rest/v1/books?id=eq.{b['id']}", HW, json.dumps({"description": t}).encode(), "PATCH")
+                b["description"] = t
+                log(f"  + {b['title'][:44]}  (Klappentext DNB)")
+            time.sleep(0.5)
 
     log(f"{len(todo)} Buecher zu pruefen")
     done = skipped = 0
@@ -98,8 +180,7 @@ def main():
             # Deutschen Klappentext setzen, wenn der bisherige englisch ist
             desc = vi.get("description")
             if desc and b.get("original_title"):
-                de = len(re.findall(r"\b(der|die|das|und|nicht|ist|eine|sich|von|dem|den|mit)\b", desc.lower()))
-                if de >= 3: patch["description"] = desc
+                if ist_deutsch(desc) and not ist_deutsch(b.get("description")): patch["description"] = desc
             elif desc and not b.get("description"):
                 patch["description"] = desc
             for col, val in (("publisher", vi.get("publisher")),
