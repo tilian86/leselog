@@ -181,6 +181,16 @@ function epubBoxHTML(b) {
   return `<button type="button" class="btn block" id="epubAdd">📎 EPUB anhängen</button>
     <div class="epub-hint">Optional, fürs Archiv. Nur du hast Zugriff – teilen kannst du später per Link (30 Tage gültig).</div>`;
 }
+// Ein, zwei Sätze aus dem Klappentext für die Teilen-Nachricht (max. ~280 Zeichen).
+function kurzbeschreibung(desc) {
+  const t = String(desc || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+  if (t.length <= 280) return t;
+  const saetze = t.match(/[^.!?…]+[.!?…]+["»«“”')]*\s*/g) || [];
+  let out = "";
+  for (const z of saetze) { if ((out + z).length > 280) break; out += z; if (out.length >= 140) break; }
+  if (out.trim().length >= 60) return out.trim();
+  const cut = t.slice(0, 270); return cut.slice(0, cut.lastIndexOf(" ")).replace(/[\s,;:–-]+$/, "") + " …";
+}
 function escPlain(s) { return esc(String(s || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim()); }
 function webRatingHTML(b) {
   if (!b.web_rating) return "";
@@ -1393,22 +1403,25 @@ function bindEpub(b) {
     share.disabled = true;
     try {
       const { url } = await shareLink(b, b.cover_url || amazonCover(b));
-      const text = `📖 ${b.title}${b.author ? " – " + b.author : ""}`;
+      const kurz = kurzbeschreibung(b.description);
+      const text = `📖 ${b.title}${b.author ? " – " + b.author : ""}` + (kurz ? `\n\n${kurz}` : "") +
+        `\n\n📥 E-Book (EPUB) zum Herunterladen – Link 30 Tage gültig:\n${url}`;
       const sbox = $("#epubShareBox");
       sbox.innerHTML = `<div class="share-link">
         <a href="${esc(url)}" target="_blank" rel="noopener">${esc(url.replace(/^https?:\/\//, ""))}</a>
         <div class="share-btns">${navigator.share ? `<button type="button" class="btn sm" id="shareGo">📤 Senden …</button>` : ""}<button type="button" class="btn sm" id="shareCopy">Kopieren</button></div>
         <div class="epub-hint">Download-Link 30 Tage gültig. WhatsApp &amp; Co. zeigen Cover und Klappentext als Vorschau.</div>
       </div>`;
-      const senden = () => navigator.share({ title: b.title, text, url }).catch(() => {});
+      // Link steht im Text (nicht extra als url), damit WhatsApp alles in einer Nachricht samt Vorschau schickt.
+      const senden = () => navigator.share({ title: b.title, text }).catch(() => {});
       if ($("#shareGo")) $("#shareGo").onclick = senden;
       $("#shareCopy").onclick = async () => {
-        try { await navigator.clipboard.writeText(url); toast("Link kopiert"); }
+        try { await navigator.clipboard.writeText(text); toast("Nachricht mit Link kopiert"); }
         catch (_) { prompt("Link zum Teilen:", url); }
       };
       // Direkt das Teilen-Menü öffnen; klappt das nicht (iOS will einen frischen Tipp), bleibt „Senden …“.
       if (navigator.share) await senden();
-      else { try { await navigator.clipboard.writeText(url); toast("Link kopiert – 30 Tage gültig"); } catch (_) {} }
+      else { try { await navigator.clipboard.writeText(text); toast("Nachricht mit Link kopiert"); } catch (_) {} }
     } catch (e) { toast(e.message || "Link fehlgeschlagen"); }
     share.disabled = false;
   };

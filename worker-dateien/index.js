@@ -118,7 +118,7 @@ ${abgelaufen
   ? `<div class="weg">Dieser Link ist abgelaufen. Frag einfach nach einem neuen 🙂</div>`
   : `<a class="knopf" href="${escH(base)}/epub">📖 E-Book herunterladen</a>
 <div class="hinweis">Dahinter steckt die <b>EPUB-Datei</b>${r.size ? " (" + groesse(r.size) + ")" : ""} – für E‑Reader und Lese‑Apps wie Apple Bücher, Tolino, Kobo, Google Play Bücher oder ElevenReader (Kindle über „Send to Kindle“).</div>
-<div class="frist">⏳ Der Download-Link funktioniert ${tage} Tage, bis ${datumDE(r.e)}.<br>Einmal heruntergeladen, bleibt die Datei für immer bei dir.</div>`}
+<div class="frist">⏳ Der Download-Link funktioniert ${tage === 1 ? "einen Tag" : tage + " Tage"}, bis ${datumDE(r.e)}.<br>Einmal heruntergeladen, bleibt die Datei für immer bei dir.</div>`}
 ${text ? `<div class="text">${escH(kurz(text, 2500))}</div>` : ""}
 <footer>Geteilt mit Leselog</footer>
 </main></body></html>`;
