@@ -85,6 +85,14 @@ export async function removeBook(id) {
   if (error) throw error;
 }
 
+// ---------- Bestsellerlisten (Tabelle charts, täglich vom Funk-Server befüllt) ----------
+export async function fetchChart(id) {
+  const { data, error } = await supa.from("charts")
+    .select("id,title,source,url,items,fetched_at").eq("id", id).maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
 // ---------- EPUB-Anhänge ----------
 // Neu (seit 04.10.2026): Cloudflare R2 über den Worker „leselog-dateien“ (Pfad „r2:<uid>/<book>.epub“),
 // weil das Supabase-Gratis-Kontingent nur 1 GB hat. Alte Pfade ohne „r2:“ liegen im Supabase-Bucket „epubs“.

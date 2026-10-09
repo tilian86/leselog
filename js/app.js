@@ -2,7 +2,7 @@
 import { CONFIG } from "./config.js";
 import { currentSession, onAuth, signInPassword, signUpPassword, signOut,
          fetchBooks, insertBook, insertBooks, updateBook, removeBook,
-         uploadEpub, epubSignedUrl, removeEpub } from "./supa.js";
+         uploadEpub, epubSignedUrl, removeEpub, fetchChart } from "./supa.js";
 import { searchBooks, searchByISBN, guessReadingDays, parseUtterance, storeLinks, fetchExtras, searchCovers, findPreview } from "./enrich.js";
 import { startDictation, hasMic } from "./audio.js";
 import { startScanner } from "./scan.js";
@@ -18,6 +18,7 @@ const I = {
   search: '<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>',
   book: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>',
   shelf: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4v16"/><path d="M8 4v16"/><path d="M12 5l4 15"/><path d="M20 20V4"/></svg>',
+  award: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="6"/><path d="M15.48 12.89 17 22l-5-3-5 3 1.52-9.11"/></svg>',
   stats: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="6" y1="20" x2="6" y2="12"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="18" y1="20" x2="18" y2="9"/></svg>',
   scan: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><line x1="7" y1="12" x2="17" y2="12"/></svg>',
   epub: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>',
@@ -32,7 +33,9 @@ const I = {
 const state = { session: null, books: [], filter: "all", search: "", view: "shelf",
   layout: localStorage.getItem("leselog_layout") || "grid",
   sort: localStorage.getItem("leselog_sort") || "added", category: "",
-  mediaType: localStorage.getItem("leselog_media") || "book" };
+  mediaType: localStorage.getItem("leselog_media") || "book",
+  chartGroup: localStorage.getItem("leselog_chart_group") || "gesamt",
+  chartList: localStorage.getItem("leselog_chart_list") || "" };
 
 const MEDIA = [["book", "📚", "Bücher"], ["movie", "🎬", "Filme"], ["series", "📺", "Serien"]];
 const isMediaType = (mt) => mt === "movie" || mt === "series";
@@ -250,6 +253,7 @@ async function renderScreen() {
     <main class="app" id="main"></main>
     <div class="dock">
       <button class="tab" data-view="shelf">${I.shelf}<span>Regal</span></button>
+      <button class="tab" data-view="charts">${I.award}<span>Bestseller</span></button>
       <button class="fab" id="addFab">${I.plus}</button>
       <button class="tab" data-view="stats">${I.stats}<span>Statistik</span></button>
     </div>`;
@@ -278,6 +282,9 @@ function renderMain() {
   document.querySelectorAll(".dock .tab").forEach((t) =>
     t.classList.toggle("on", t.dataset.view === state.view));
 
+  // Bestseller gelten für Bücher & Hörbücher – die Medien-Reiter oben passen dort nicht
+  $("#mediaTabs").parentElement.style.display = state.view === "charts" ? "none" : "";
+  if (state.view === "charts") { $("#countPill").textContent = "Bestseller"; return renderCharts(main); }
   if (state.view === "stats") return renderStats(main);
 
   const isBook = state.mediaType === "book";
@@ -652,6 +659,187 @@ function renderStats(main) {
 // ================================================================
 //  Bücher laden
 // ================================================================
+// ================================================================
+//  Bestseller: SPIEGEL-Bestseller + Apple-Books-Charts (Tabelle charts,
+//  jeden Morgen vom Funk-Server befüllt: tools/bestseller.py)
+// ================================================================
+// [Schlüssel, Emoji, Name, [[Listen-ID, Reiter], …], Kategorie beim Merken]
+const CHART_GROUPS = [
+  ["gesamt", "🏆", "Gesamt", [["gesamt", "Alle Listen"], ["ap_eb_all", "E-Books"], ["au_all", "Hörbücher"]], ""],
+  ["bel", "📖", "Belletristik", [["sp_hc_bel", "Hardcover"], ["sp_pb_bel", "Paperback"], ["sp_tb_bel", "Taschenbuch"],
+    ["ap_eb_9031", "E-Book"], ["au_50000040", "Hörbuch"]], "Belletristik"],
+  ["sach", "🧠", "Sachbuch", [["sp_hc_sach", "Hardcover"], ["sp_pb_sach", "Paperback"], ["sp_tb_sach", "Taschenbuch"],
+    ["ap_eb_9002", "E-Book"], ["au_50000052", "Hörbuch"]], ""],
+  ["audio", "🎧", "Hörbücher", [["au_all", "Alle"], ["au_50000040", "Belletristik"], ["au_50000051", "Krimi"],
+    ["au_50000052", "Sachbuch"], ["au_50000055", "Fantasy"], ["au_50000056", "Ratgeber"], ["au_50000069", "Liebe"],
+    ["au_50000042", "Biografien"], ["au_50000044", "Kinder"]], ""],
+  ["krimi", "🔍", "Krimi & Thriller", [["ap_eb_9032", "E-Book"], ["au_50000051", "Hörbuch"]], "Krimi & Thriller"],
+  ["fantasy", "🐉", "Fantasy & Sci-Fi", [["ap_eb_9020", "E-Book"], ["au_50000055", "Hörbuch"]], "Fantasy & Science-Fiction"],
+  ["liebe", "💞", "Liebesromane", [["ap_eb_9003", "E-Book"], ["au_50000069", "Hörbuch"]], "Belletristik"],
+  ["bio", "👤", "Biografien", [["ap_eb_9008", "E-Book"], ["au_50000042", "Hörbuch"]], "Biografien & Memoiren"],
+  ["ratgeber", "🌱", "Ratgeber", [["sp_ratgeber", "SPIEGEL"], ["ap_eb_9025", "E-Book"], ["au_50000056", "Hörbuch"]], "Persönliche Entwicklung"],
+  ["wirtschaft", "💶", "Wirtschaft", [["ap_eb_9009", "E-Book"], ["au_50000043", "Hörbuch"]], "Wirtschaft & Finanzen"],
+  ["geschichte", "🏛️", "Geschichte & Politik", [["ap_eb_9015", "Geschichte"], ["ap_eb_9034", "Politik"], ["au_50000049", "Hörbuch"]], "Gesellschaft & Geschichte"],
+  ["wissen", "🔬", "Wissenschaft", [["ap_eb_9019", "E-Book"], ["au_50000054", "Hörbuch"]], "Wissenschaft & Natur"],
+  ["religion", "🪷", "Religion & Spiritualität", [["ap_eb_9018", "E-Book"], ["au_50000053", "Hörbuch"]], "Philosophie & Spiritualität"],
+  ["kinder", "🧒", "Kinder & Jugend", [["sp_kinder", "SPIEGEL"], ["ap_eb_9010", "E-Book"], ["au_50000044", "Hörbuch"]], ""],
+];
+const CHART_NAMES = { sp_hc_bel: "SPIEGEL Hardcover Belletristik", sp_hc_sach: "SPIEGEL Hardcover Sachbuch",
+  sp_pb_bel: "SPIEGEL Paperback Belletristik", sp_pb_sach: "SPIEGEL Paperback Sachbuch",
+  sp_tb_bel: "SPIEGEL Taschenbuch Belletristik", sp_tb_sach: "SPIEGEL Taschenbuch Sachbuch",
+  sp_ratgeber: "SPIEGEL Ratgeber", ap_eb_all: "Apple Books · E-Books", au_all: "Apple Books · Hörbücher" };
+// Apple-Genre → eigene Kategorie (für „Gesamt“ und die Hörbuch-Gruppe)
+const CHART_GENRE_CAT = [[/krimi|thriller|polizei/i, "Krimi & Thriller"], [/fantasy|science/i, "Fantasy & Science-Fiction"],
+  [/biograf|memoir/i, "Biografien & Memoiren"], [/belletristik|liebes|roman|literatur|klassiker/i, "Belletristik"],
+  [/business|wirtschaft|finanz/i, "Wirtschaft & Finanzen"], [/geschichte|politik/i, "Gesellschaft & Geschichte"],
+  [/wissenschaft|natur/i, "Wissenschaft & Natur"], [/psycholog|selbst|ratgeber/i, "Persönliche Entwicklung"],
+  [/spirit|religion/i, "Philosophie & Spiritualität"], [/gesundheit|ernährung|fitness/i, "Gesundheit & Körper"]];
+
+const chartCache = {};
+let demoCharts = null;
+async function loadChart(id) {
+  if (chartCache[id]) return chartCache[id];
+  let c;
+  if (DEMO) {   // lokale Vorschau: demo-charts.json (nicht im Repo) statt Datenbank
+    demoCharts = demoCharts || fetch("demo-charts.json").then((r) => (r.ok ? r.json() : [])).catch(() => []);
+    c = (await demoCharts).find((x) => x.id === id);
+  } else c = await fetchChart(id);
+  if (c) chartCache[id] = c;
+  return c;
+}
+// Gleiches Buch erkennen: ISBN, sonst Haupttitel + Nachname der Erstautorin (wie im Server-Skript)
+function chartNorm(s) {
+  return String(s || "").normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase()
+    .replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
+}
+function chartKey(title, author) {
+  const t = String(title || "").split(/\s[–—-]\s|:|\(|\.\s/)[0];
+  const first = String(author || "").split(/,|&| und | and /)[0].trim();
+  return chartNorm(t) + "|" + (first ? chartNorm(first).split(" ").pop() : "");
+}
+function shelfIndex() {
+  const m = new Map();
+  state.books.forEach((b) => {
+    if ((b.media_type || "book") !== "book") return;
+    if (b.isbn13) m.set("i:" + b.isbn13, b);
+    m.set(chartKey(b.title, b.author), b);
+    if (b.original_title) m.set(chartKey(b.original_title, b.author), b);
+  });
+  return m;
+}
+const chartMatch = (idx, it) => (it.isbn && idx.get("i:" + it.isbn)) || idx.get(chartKey(it.t, it.a));
+function chartCategory(it, listId, g) {
+  if (g[4]) return g[4];
+  const ids = [listId, ...(it.on || []).map((o) => o.id)];
+  if (ids.some((x) => /^sp_.*_bel$/.test(x))) return "Belletristik";
+  if (ids.includes("sp_ratgeber")) return "Persönliche Entwicklung";
+  const hit = CHART_GENRE_CAT.find(([re]) => re.test(it.g || ""));
+  return hit ? hit[1] : "";
+}
+function chartGroupNow() { return CHART_GROUPS.find((g) => g[0] === state.chartGroup) || CHART_GROUPS[0]; }
+
+function renderCharts(main) {
+  const g = chartGroupNow(), subs = g[3];
+  if (!subs.some((x) => x[0] === state.chartList)) state.chartList = subs[0][0];
+  main.innerHTML = `
+    <div class="cat-chips ch-groups">${CHART_GROUPS.map(([k, ic, name]) =>
+      `<button data-g="${k}" class="${k === g[0] ? "on" : ""}">${ic} ${esc(name)}</button>`).join("")}</div>
+    ${subs.length > 1 ? `<div class="seg ch-subs">${subs.map(([id, l]) =>
+      `<button data-l="${id}" class="${id === state.chartList ? "on" : ""}">${esc(l)}</button>`).join("")}</div>` : ""}
+    <div id="chartWrap"><div class="center-load"><span class="spin dark"></span>Liste wird geladen …</div></div>`;
+  const row = main.querySelector(".ch-groups"), on = row.querySelector(".on");
+  if (on) row.scrollLeft = on.offsetLeft - (row.clientWidth - on.offsetWidth) / 2;
+  row.querySelectorAll("button").forEach((b) => b.onclick = () => {
+    state.chartGroup = b.dataset.g; state.chartList = "";
+    localStorage.setItem("leselog_chart_group", state.chartGroup);
+    renderCharts(main);
+  });
+  main.querySelectorAll(".ch-subs button").forEach((b) => b.onclick = () => {
+    state.chartList = b.dataset.l; localStorage.setItem("leselog_chart_list", state.chartList);
+    renderCharts(main);
+  });
+  fillChart(g, state.chartList);
+}
+async function fillChart(g, id) {
+  let c = null;
+  try { c = await loadChart(id); } catch (e) { console.error(e); }
+  const wrap = $("#chartWrap");
+  if (!wrap || state.view !== "charts" || state.chartList !== id) return;   // inzwischen umgeschaltet
+  if (!c || !(c.items || []).length) {
+    wrap.innerHTML = `<div class="empty"><p>${DEMO ? "Bestseller gibt es nur angemeldet."
+      : "Diese Liste ist gerade nicht abrufbar. Morgen früh kommt ein neuer Stand."}</p></div>`;
+    return;
+  }
+  const idx = shelfIndex();
+  wrap.innerHTML = chartSourceHTML(c) +
+    `<ol class="rank-list ch-list">${c.items.map((it, i) => chartRowHTML(it, i, chartMatch(idx, it))).join("")}</ol>`;
+  wrap.querySelectorAll(".ch-row").forEach((r) => r.onclick = () => openChartItem(c, c.items[+r.dataset.i], g));
+}
+function chartSourceHTML(c) {
+  const d = new Date(c.fetched_at);
+  const stand = isNaN(d) ? "" : d.toLocaleDateString("de-DE", { weekday: "short", day: "2-digit", month: "2-digit" });
+  const name = c.source === "gesamt" ? "Alle Listen zusammengerechnet (SPIEGEL + Apple Books)" : (CHART_NAMES[c.id] || c.title);
+  const link = c.source === "spiegel" && c.url ? ` · <a href="${esc(c.url)}" target="_blank" rel="noopener">Quelle ↗</a>` : "";
+  return `<div class="ch-src"><b>${esc(name)}</b>${stand ? ` · Stand ${stand}` : ""}${link}</div>`;
+}
+function ownLabel(b) { const s = b.status || "read"; return (s === "want" ? "🔖 " : s === "read" ? "✓ " : "") + statusLabel(s, "book"); }
+function chartRowHTML(it, i, own) {
+  const meta = it.on
+    ? it.on.slice(0, 3).map((o) => `<span class="ch-pill">#${o.r} ${esc(o.l)}</span>`).join("")
+    : [it.b ? `<span class="ch-badge${it.b === "NEU" ? " neu" : ""}">${esc(it.b)}</span>` : "", esc(it.g || it.p || "")]
+        .filter(Boolean).join(" · ");
+  return `<li class="rank-row ch-row" data-i="${i}">
+    <span class="rank-num">${it.r}</span>
+    <div class="cover-wrap thumb"><div class="cover-fallback"><div class="ft">${esc(it.t)}</div></div>${coverImg({ cover_url: it.img })}</div>
+    <div class="rank-main">
+      <div class="rank-title">${esc(it.t)}</div>
+      <div class="rank-author">${esc(it.a)}</div>
+      ${meta ? `<div class="ch-meta">${meta}</div>` : ""}
+    </div>
+    ${own ? `<span class="row-status ${own.status || "read"}">${ownLabel(own)}</span>` : ""}
+  </li>`;
+}
+function openChartItem(c, it, g) {
+  const own = chartMatch(shelfIndex(), it);
+  const b = { title: it.t, author: it.a, cover_url: it.img, isbn13: it.isbn && it.isbn.length === 13 ? it.isbn : null };
+  const where = it.on
+    ? it.on.map((o) => `Platz ${o.r} · ${esc(CHART_NAMES[o.id] || o.l)}`).join("<br>")
+    : `Platz ${it.r} · ${esc(CHART_NAMES[c.id] || c.title)}${it.b ? " · " + esc(it.b) : ""}`;
+  const facts = [it.p, it.pr, it.j].filter(Boolean).map(esc).join(" · ");
+  const extra = (it.lp ? `<a href="${esc(it.lp)}" target="_blank" rel="noopener">📖 Leseprobe ↗</a>` : "") +
+    (/apple\.com/.test(it.u || "") ? `<a href="${esc(it.u)}" target="_blank" rel="noopener">Apple Books ↗</a>` : "");
+  openSheet(`
+    <div class="detail-hero">${coverHTML(b)}
+      <div class="dh-main"><h2>${esc(it.t)}</h2><div class="dh-author">${esc(it.a)}</div>
+        ${facts ? `<div class="dh-facts">${facts}</div>` : ""}<div class="ch-where">🏆 ${where}</div></div>
+    </div>
+    ${own ? `<button class="btn block" id="chOwn">${ownLabel(own)} – im Regal öffnen</button>`
+          : `<button class="btn primary block" id="chWant">🔖 Will lesen</button>`}
+    ${it.d ? `<div class="klappentext"><div class="kt-label">Klappentext</div><p class="kt-text clamp">${escPlain(it.d)}</p></div>` : ""}
+    <div class="store-links">${extra}${storeLinksHTML(b)}</div>`);
+  bindKlappentext();
+  const ob = $("#chOwn"); if (ob) ob.onclick = () => openDetail(own);
+  const wb = $("#chWant"); if (wb) wb.onclick = () => addChartItem(c, it, g, wb);
+}
+async function addChartItem(c, it, g, btn) {
+  if (DEMO) return toast("Nur angemeldet möglich");
+  btn.disabled = true; btn.textContent = "Wird gemerkt …";
+  const rec = { title: it.t, author: it.a || null, isbn13: it.isbn && it.isbn.length === 13 ? it.isbn : null,
+    publisher: it.p || null, published_year: it.j ? +it.j : null, cover_url: it.img || null,
+    description: it.d || null, status: "want", media_type: "book", source: "bestseller",
+    category: chartCategory(it, c.id, g) || null,
+    raw_input: `Bestseller: ${CHART_NAMES[c.id] || c.title}, Platz ${it.r} (${new Date().toLocaleDateString("de-DE")})` };
+  try {
+    state.books.unshift(await insertBook(rec));
+    closeSheet();
+    toast("🔖 Steht jetzt auf „Will lesen“");
+    fillChart(g, state.chartList);
+  } catch (e) {
+    console.error(e); toast("Konnte nicht speichern");
+    btn.disabled = false; btn.textContent = "🔖 Will lesen";
+  }
+}
+
 async function loadBooks() {
   const main = $("#main");
   if (DEMO) { state.books = DEMO_BOOKS.slice(); renderMain(); return; }

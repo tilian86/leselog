@@ -578,3 +578,19 @@ textarea.input { resize: vertical; min-height: 70px; line-height: 1.5; }
   font-size: 14px; font-weight: 600; }
 @media (min-width: 600px) { .want-row { grid-auto-columns: 136px; gap: 18px; } }
 @media (hover: none) { .want-row { scrollbar-width: none; } .want-row::-webkit-scrollbar { display: none; } }
+
+/* ---------------- Bestseller ---------------- */
+.ch-groups { margin-top: 2px; }
+.ch-subs { margin-top: 10px; }
+.ch-src { font-size: 12.5px; color: var(--ink-faint); margin: 16px 2px 2px; line-height: 1.5; }
+.ch-src b { color: var(--ink-soft); font-weight: 600; }
+.ch-src a { color: var(--accent); text-decoration: none; font-weight: 600; }
+.ch-row .rank-num { width: 28px; font-size: 18px; }
+.ch-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin-top: 4px;
+  font-size: 11.5px; color: var(--ink-faint); }
+.ch-pill { padding: 1px 7px; border-radius: 999px; background: var(--paper-2); border: 1px solid var(--line);
+  color: var(--ink-soft); font-weight: 600; white-space: nowrap; }
+.ch-badge { font-weight: 700; color: var(--ink-soft); }
+.ch-badge.neu { color: var(--accent); }
+.ch-where { font-size: 13px; color: var(--ink-soft); margin-top: 9px; line-height: 1.55; }
+.detail-hero + .btn.block { margin-bottom: 4px; }

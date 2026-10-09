@@ -6,3 +6,4 @@ worker/node_modules/
 .dev.vars
 worker-dateien/.wrangler/
 .testsession.json
+demo-charts.json
