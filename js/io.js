@@ -219,6 +219,15 @@ function normalizeRecord(r) {
     date_finished: toDate(r.date_finished),
     notes: r.notes ? String(r.notes).trim() : null,
     cover_url: cover,
+    // Aus dem eigenen JSON-Backup mitnehmen (CSV hat diese Spalten nicht -> wie bisher leer).
+    // Wichtig: „enriched“ – sonst überschreibt die Auto-Anreicherung nach dem Zurückspielen
+    // die gepflegten Cover, deutschen ISBNs und Klappentexte mit dem ersten Google-Treffer.
+    subtitle: r.subtitle ? String(r.subtitle).trim() : null,
+    original_title: !media && r.original_title ? String(r.original_title).trim() : null,
+    google_books_id: !media && r.google_books_id ? String(r.google_books_id) : null,
+    web_rating: r.web_rating != null && r.web_rating !== "" && !isNaN(+r.web_rating) ? +r.web_rating : null,
+    web_rating_count: toInt(r.web_rating_count),
+    enriched: r.enriched === true,
     source: "import",
   };
 }

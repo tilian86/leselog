@@ -70,7 +70,7 @@ const SORTS = [
 ];
 
 // Steht unten im Statistik-Tab; bei jeder neuen Fassung mit ?v= in index.html und sw.js hochzählen.
-const APP_VERSION = "12";
+const APP_VERSION = "13";
 
 // Vorschau-Modus (index.html#demo): Design ohne Login/DB ansehen. In Produktion unsichtbar.
 const DEMO = location.hash.includes("demo");
@@ -114,6 +114,7 @@ function closeSheet() {
   document.body.style.overflow = "";
   if (activeScanner) { activeScanner.stop(); activeScanner = null; }
   if (activeDictation) { activeDictation.cancel(); activeDictation = null; }
+  clearInterval(recTimerInt);   // sonst tickt die Aufnahme-Uhr nach dem Schließen ewig weiter
 }
 
 // ---------------- Cover ----------------
@@ -222,7 +223,9 @@ function klappentextHTML(b) {
 // ================================================================
 //  Rendering: Auth vs Main
 // ================================================================
+let screenShown = false;
 async function renderScreen() {
+  screenShown = true;
   const screen = $("#screen");
   if (!state.session) {
     document.body.style.paddingBottom = "0";
@@ -251,7 +254,7 @@ async function renderScreen() {
         // Noch kein Konto? Dann anlegen.
         try { await signUpPassword(email, password); toast("Konto erstellt – willkommen! 📚"); }
         catch (e2) {
-          const msg = /already registered|already exists|registered/i.test(e2.message || "")
+          const msg = /already registered|already exists|registered|not allowed|disabled/i.test(e2.message || "")
             ? "Falsches Passwort" : (e2.message || e.message || "Anmeldung fehlgeschlagen");
           toast(msg); btn.innerHTML = "Anmelden"; btn.disabled = false;
         }
@@ -872,7 +875,15 @@ async function loadBooks() {
     state.books = await fetchBooks();
     renderMain();
     autoEnrich();
-  } catch (e) { toast("Konnte Bücher nicht laden"); console.error(e); }
+  } catch (e) {
+    console.error(e); toast("Konnte Bücher nicht laden");
+    // Vorher drehte sich der Lade-Kringel ewig (z. B. Funkloch beim Start).
+    const m = $("#main");
+    if (m) {
+      m.innerHTML = `<div class="center-load">Regal konnte nicht geladen werden.<br><button class="btn primary" id="reloadBooks" style="margin-top:12px">Nochmal versuchen</button></div>`;
+      $("#reloadBooks").onclick = loadBooks;
+    }
+  }
 }
 
 // Importierte Bücher automatisch über Google Books vervollständigen
@@ -1601,18 +1612,25 @@ async function openScanner() {
     <div class="rec-status" id="scanStatus">Kamera startet…</div>
   `);
   try {
-    activeScanner = await startScanner($("#scanVid"), {
+    const vid = $("#scanVid");
+    let gefunden = false;
+    const sc = await startScanner(vid, {
       onDetected: async (isbn) => {
+        gefunden = true;
         activeScanner && activeScanner.stop(); activeScanner = null;
-        $("#scanStatus").innerHTML = `<span class="spin dark"></span> ISBN ${esc(isbn)} – suche Buch…`;
+        const st = $("#scanStatus");
+        if (st) st.innerHTML = `<span class="spin dark"></span> ISBN ${esc(isbn)} – suche Buch…`;
         try {
           const b = await searchByISBN(isbn);
           if (b) { b.source = "barcode"; openReview(b); }
           else openReview({ title: "", isbn13: isbn.length === 13 ? isbn : null, source: "barcode" });
         } catch (e) { toast("Buch zur ISBN nicht gefunden"); }
       },
-      onError: () => { $("#scanStatus").textContent = "Kamera nicht verfügbar – tipp den Titel stattdessen ein."; },
+      onError: () => { const st = $("#scanStatus"); if (st) st.textContent = "Kamera nicht verfügbar – tipp den Titel stattdessen ein."; },
     });
+    // Blatt schon zu (oder Treffer, bevor der Start fertig war)? Sonst bliebe die Kamera an.
+    if (gefunden || !vid.isConnected || !$("#sheet").classList.contains("show")) { sc.stop(); return; }
+    activeScanner = sc;
     setTimeout(() => { const s = $("#scanStatus"); if (s && s.textContent === "Kamera startet…") s.textContent = "Suche Barcode…"; }, 1200);
   } catch (e) { toast("Scanner nicht verfügbar"); }
 }
@@ -1714,8 +1732,9 @@ onAuth((session) => {
 
 (async () => {
   if (DEMO) { state.session = { demo: true }; await renderScreen(); return; }
-  state.session = await currentSession();
-  await renderScreen();
+  // onAuth (INITIAL_SESSION) rendert meist schon – nicht doppelt rendern/laden.
+  const s = await currentSession();
+  if (!screenShown || !!s !== !!state.session) { state.session = s; await renderScreen(); }
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("sw.js").catch(() => {});
   }

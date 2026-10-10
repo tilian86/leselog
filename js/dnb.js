@@ -26,11 +26,16 @@ function similar(a, b) {
   return (2 * hit) / (A.size + B.size);
 }
 
+// DNB-Titel enthalten unsichtbare Steuerzeichen (U+0098/U+009C = Nicht-Sortier-Marker,
+// z. B. „\x98Das\x9c Risiko …“) und teils zerlegte Umlaute. Ohne Aufräumen landeten die
+// beim „Umstellen“ im Titel (Suche/Sortierung kaputt).
+const sauber = (s) => s.replace(/[\u0000-\u001f\u007f-\u009f]/g, "").normalize("NFC").replace(/\s+/g, " ").trim();
+
 function field(rec, tag, code) {
   for (const f of rec.getElementsByTagNameNS(NS, "datafield")) {
     if (f.getAttribute("tag") !== tag) continue;
     for (const s of f.getElementsByTagNameNS(NS, "subfield")) {
-      if (s.getAttribute("code") === code && s.textContent) return s.textContent.trim();
+      if (s.getAttribute("code") === code && s.textContent) return sauber(s.textContent) || null;
     }
   }
   return null;

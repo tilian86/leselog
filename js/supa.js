@@ -1,5 +1,5 @@
 // Supabase-Client, Auth und Datenzugriff
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.117.3";
 import { CONFIG } from "./config.js";
 
 export const supa = createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_KEY, {

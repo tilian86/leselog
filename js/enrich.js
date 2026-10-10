@@ -90,15 +90,18 @@ export function storeLinks(b) {
 // z. B. wenn er über OpenLibrary kam). Best effort – Fehler werden verschluckt.
 export async function fetchExtras(b) {
   if (b.description && b.web_rating != null) return {};
+  // Mit eigenem Schlüssel: ohne landet die Anfrage im weltweit geteilten Google-Kontingent (immer 429).
+  // Nur über Google-ID oder ISBN – eine Titelsuche mit maxResults=1 trifft leicht ein falsches Buch
+  // (gleiche Regel wie bei der Leseprobe).
+  const key = (CONFIG.GBOOKS_KEY ? "&key=" + CONFIG.GBOOKS_KEY : "") + "&country=DE";
   try {
     let vol = null;
     if (b.google_books_id) {
-      const r = await fetch("https://www.googleapis.com/books/v1/volumes/" + b.google_books_id);
+      const r = await fetch("https://www.googleapis.com/books/v1/volumes/" + encodeURIComponent(b.google_books_id) + "?" + key.slice(1));
       if (r.ok) vol = (await r.json()).volumeInfo;
     }
-    if (!vol) {
-      const q = b.isbn13 ? "isbn:" + b.isbn13 : encodeURIComponent([b.title, b.author].filter(Boolean).join(" "));
-      const r = await fetch("https://www.googleapis.com/books/v1/volumes?q=" + q + "&maxResults=1");
+    if (!vol && b.isbn13) {
+      const r = await fetch("https://www.googleapis.com/books/v1/volumes?q=isbn:" + b.isbn13 + "&maxResults=1" + key);
       if (r.ok) { const j = await r.json(); vol = j.items && j.items[0] && j.items[0].volumeInfo; }
     }
     if (!vol) return {};
@@ -371,18 +374,21 @@ export async function findPreview(b) {
   } catch (_) {}
   const key = CONFIG.GBOOKS_KEY ? "&key=" + CONFIG.GBOOKS_KEY : "";
   const API = "https://www.googleapis.com/books/v1/volumes";
-  let item = null;
+  let item = null, antwort = false;   // antwort: Google hat wirklich geantwortet (nicht 403/429/503)
   try {
     if (b.google_books_id) {
       const r = await fetch(API + "/" + b.google_books_id + "?country=DE" + key);
-      if (r.ok) item = await r.json();
+      if (r.ok) { item = await r.json(); antwort = true; }
+      else if (r.status === 404) antwort = true;
     }
     if (!item && isbn) {
       const r = await fetch(API + "?q=isbn:" + isbn + "&maxResults=1&country=DE" + key);
-      if (r.ok) { const j = await r.json(); item = j.items && j.items[0]; }
-      else if (r.status === 403) return null;   // Kontingent leer: nichts merken, später neu versuchen
+      if (r.ok) { const j = await r.json(); item = j.items && j.items[0]; antwort = true; }
     }
   } catch (_) { return null; }
+  // Störung bei Google (oft 503 backendFailed oder Kontingent leer): nichts merken, später neu versuchen.
+  // Vorher stand dann 30 Tage lang „keine Leseprobe“ im Speicher.
+  if (!antwort) return null;
   const view = item && item.accessInfo && item.accessInfo.viewability;
   const url = item && (view === "PARTIAL" || view === "ALL_PAGES")
     ? "https://books.google.de/books?id=" + item.id + "&printsec=frontcover"

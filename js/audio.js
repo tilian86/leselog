@@ -67,7 +67,10 @@ function startBrowserDictation({ onStatus, onPartial }) {
   rec.lang = "de-DE";
   rec.interimResults = true;
   rec.continuous = true;
-  let finalText = "";
+  let finalText = "", ended = false, onEnded = null;
+  // Safari beendet die Erkennung oft von selbst (Stille, fehlende Freigabe, Zeitlimit). Kam das
+  // „end“ schon vor dem Tipp auf „Fertig“, wartete stop() bisher ewig („wird verstanden …“).
+  rec.onend = () => { ended = true; if (onEnded) onEnded(); };
   rec.onresult = (e) => {
     let interim = "";
     for (let i = e.resultIndex; i < e.results.length; i++) {
@@ -82,8 +85,11 @@ function startBrowserDictation({ onStatus, onPartial }) {
 
   const stop = () =>
     new Promise((resolve) => {
-      rec.onend = () => resolve(finalText.trim());
-      try { rec.stop(); } catch (_) { resolve(finalText.trim()); }
+      const fertig = () => resolve(finalText.trim());
+      if (ended) return fertig();
+      onEnded = fertig;
+      try { rec.stop(); } catch (_) { fertig(); }
+      setTimeout(fertig, 4000);   // Notnagel, falls kein „end“ mehr kommt
     });
   const cancel = () => { try { rec.abort(); } catch (_) {} };
   return { stop, cancel, mode: "browser" };

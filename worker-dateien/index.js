@@ -9,6 +9,7 @@
 //   GET    /b/<slug>/epub       Download          GET /b/<slug>/cover.jpg   Cover
 //   Der Worker „buch“ (worker-buch/) reicht buch.florian-s-thiel.workers.dev/<slug> hierher durch.
 // Ablage im Bucket: <uid>/<bookId>.epub, covers/<bookId>.jpg und teilen/<slug>.json
+// Secret ALLOWED_UIDS (optional): nur diese Supabase-Konten dürfen hochladen/signieren/teilen.
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const MAX = 100 * 1024 * 1024;
@@ -222,6 +223,11 @@ export default {
     // Ab hier nur mit Login
     const uid = await userId(req, env);
     if (!uid) return json({ error: "Nicht angemeldet" }, 401, h);
+    // Freigabeliste (Secret ALLOWED_UIDS, kommagetrennt): Die Supabase-Anmeldung ist offen,
+    // sonst könnte jedes neu angelegte Konto hier 100-MB-Dateien ablegen und Teilen-Seiten
+    // veröffentlichen. Ohne Secret bleibt alles wie bisher offen.
+    const erlaubt = String(env.ALLOWED_UIDS || "").split(",").map((s) => s.trim()).filter(Boolean);
+    if (erlaubt.length && !erlaubt.includes(uid)) return json({ error: "Dieses Konto ist für den Datei-Speicher nicht freigeschaltet." }, 403, h);
 
     if (p[0] === "f" && p.length === 2 && UUID.test(p[1])) {
       const key = `${uid}/${p[1]}.epub`;
