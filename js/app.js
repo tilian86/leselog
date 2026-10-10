@@ -70,7 +70,7 @@ const SORTS = [
 ];
 
 // Steht unten im Statistik-Tab; bei jeder neuen Fassung mit ?v= in index.html und sw.js hochzählen.
-const APP_VERSION = "11";
+const APP_VERSION = "12";
 
 // Vorschau-Modus (index.html#demo): Design ohne Login/DB ansehen. In Produktion unsichtbar.
 const DEMO = location.hash.includes("demo");

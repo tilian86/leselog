@@ -1,9 +1,9 @@
 // Leselog Service Worker – App-Shell offline verfügbar machen.
-const CACHE = "leselog-v11";
+const CACHE = "leselog-v12";
 const SHELL = [
   "./",
   "./index.html",
-  "./css/style.css?v=11",
+  "./css/style.css?v=12",
   "./js/config.js",
   "./js/supa.js",
   "./js/enrich.js",
@@ -12,7 +12,8 @@ const SHELL = [
   "./js/epub.js",
   "./js/io.js",
   "./js/tmdb.js",
-  "./js/app.js?v=11",
+  "./js/dnb.js",
+  "./js/app.js?v=12",
   "./manifest.webmanifest",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
@@ -38,8 +39,14 @@ self.addEventListener("fetch", (e) => {
   if (e.request.method !== "GET" || url.origin !== self.location.origin) return;
 
   // Network-first: immer die frischste Version holen, Cache nur als Offline-Fallback.
+  // Die Module (enrich.js, dnb.js, …) haben kein ?v= – GitHub Pages lässt sie
+  // 10 Min im Browser-Cache liegen. Direkt nach einer neuen Fassung passten dann
+  // neues app.js und altes Modul nicht zusammen (weiße Seite). Deshalb fragt der
+  // SW bei eigenen Dateien (auch der Startseite) immer kurz beim Server nach
+  // (no-cache = 304, wenn gleich) – so passt alles zur selben Fassung.
+  const frisch = new Request(e.request, { cache: "no-cache" });
   e.respondWith(
-    fetch(e.request)
+    fetch(frisch)
       .then((res) => {
         if (res && res.status === 200) {
           const copy = res.clone();
@@ -47,6 +54,14 @@ self.addEventListener("fetch", (e) => {
         }
         return res;
       })
-      .catch(() => caches.match(e.request))
+      .catch(async () => {
+        const hit = await caches.match(e.request);
+        if (hit) return hit;
+        if (e.request.mode === "navigate") {
+          const start = await caches.match("./index.html");
+          if (start) return start;
+        }
+        return Response.error();
+      })
   );
 });
