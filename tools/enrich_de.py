@@ -165,7 +165,7 @@ def main():
             time.sleep(0.5)
 
     log(f"{len(todo)} Buecher zu pruefen")
-    done = skipped = 0
+    done = skipped = gestoert = 0
     for b in todo:
         try:
             # Deutsche Ausgabe: gezielt ueber die ISBN der deutschen Ausgabe
@@ -178,6 +178,7 @@ def main():
                 d = gbooks(q, "de" if b.get("original_title") else None)
                 items = (d or {}).get("items") or []
                 if items: hit = items[0]
+            gestoert = 0
             if not hit:
                 skipped += 1; time.sleep(0.8); continue
 
@@ -217,8 +218,13 @@ def main():
             log(f"Google-Kontingent erschoepft – {done} erledigt, Rest morgen.")
             return 0
         except GoogleGestoert as e:
-            log(f"Google Books antwortet nicht ({e}) – {done} erledigt, Rest morgen.")
-            return 0
+            # Google Books wirft zeitweise 503 – einzelne Ausfaelle ueberspringen,
+            # erst bei drei in Folge fuer heute aufhoeren.
+            gestoert += 1; skipped += 1
+            if gestoert >= 3:
+                log(f"Google Books antwortet nicht ({e}) – {done} erledigt, Rest morgen.")
+                return 0
+            time.sleep(5); continue
         except Exception as e:
             log(f"  ! {b['title'][:40]}: {e}"); skipped += 1
 
