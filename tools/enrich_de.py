@@ -5,8 +5,9 @@ Deutsche Klappentexte kommen zuerst von der DNB (Verlagstext per ISBN, ohne
 Schluessel und ohne Kontingent), danach von Google Books.
 
 Laeuft taeglich per launchd. Ist nichts zu tun, endet das Skript sofort.
-Ist Googles Tageskontingent erschoepft (403), bricht es sauber ab und versucht
-es am naechsten Tag erneut. Es aendert nur, was leer ist – nie vorhandene Daten.
+Ist Googles Tageskontingent erschoepft oder Google Books gestoert, bricht es
+sauber ab (mit dem echten Grund im Log) und versucht es am naechsten Tag erneut.
+Es aendert nur, was leer ist – nie vorhandene Daten.
 """
 import json, re, time, html, unicodedata, subprocess, urllib.request, urllib.parse, sys
 from datetime import datetime
@@ -40,6 +41,7 @@ def req(url, hdrs=None, data=None, method=None, timeout=30):
         return json.loads(b) if b else None
 
 class QuotaExhausted(Exception): pass
+class GoogleGestoert(Exception): pass
 
 DE_WORTE = re.compile(r"\b(der|die|das|und|nicht|ist|eine|sich|von|dem|den|mit)\b")
 def ist_deutsch(t):
@@ -113,15 +115,29 @@ def gbooks(query, lang=None):
     p = {"q":query, "key":GKEY, "country":"DE", "maxResults":"4"}
     if lang: p["langRestrict"] = lang
     url = GB + "?" + urllib.parse.urlencode(p)
+    # GKEY ist der Browser-Schluessel der Leselog-Seite und nur fuer deren Adresse
+    # freigegeben: ohne Referer antwortet Google 403 „referer <empty> blocked“ –
+    # das wurde frueher als „Kontingent erschoepft“ missverstanden (0 Treffer seit 09/2026).
+    hdrs = {"Referer": "https://tilian86.github.io/leselog/"}
+    letzter = None
     for i in range(4):
         try:
-            return req(url, timeout=25)
+            return req(url, hdrs, timeout=25)
         except urllib.error.HTTPError as e:
-            if e.code == 403: raise QuotaExhausted()
-            if e.code in (429,500,503): time.sleep(2 + i*2); continue
+            try: body = e.read()[:600].decode("utf-8", "replace")
+            except Exception: body = ""
+            if e.code == 403:
+                if any(k in body for k in ("dailyLimitExceeded", "quotaExceeded", "RESOURCE_EXHAUSTED")):
+                    raise QuotaExhausted()
+                m = re.search(r'"message":\s*"([^"]+)"', body)
+                raise GoogleGestoert(f"403 {m.group(1) if m else body[:120]}")
+            if e.code in (429,500,502,503):
+                letzter = e.code; time.sleep(2 + i*2); continue
             return None
-        except Exception:
-            time.sleep(2)
+        except Exception as e:
+            letzter = type(e).__name__; time.sleep(2)
+    if letzter == 429: raise QuotaExhausted()
+    if letzter: raise GoogleGestoert(f"{letzter} nach 4 Versuchen")
     return None
 
 def main():
@@ -199,6 +215,9 @@ def main():
             time.sleep(0.8)
         except QuotaExhausted:
             log(f"Google-Kontingent erschoepft – {done} erledigt, Rest morgen.")
+            return 0
+        except GoogleGestoert as e:
+            log(f"Google Books antwortet nicht ({e}) – {done} erledigt, Rest morgen.")
             return 0
         except Exception as e:
             log(f"  ! {b['title'][:40]}: {e}"); skipped += 1
