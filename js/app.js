@@ -9,7 +9,7 @@ import { startScanner } from "./scan.js";
 import { readEpubMeta } from "./epub.js";
 import { booksToCSV, booksToJSON, download, parseImportFile } from "./io.js";
 import { searchMedia, getMediaDetails, tmdbUrl, getWatchProviders, freeProviderNames } from "./tmdb.js";
-import { findGermanEdition } from "./dnb.js";
+import { findGermanEdition, booksByAuthor } from "./dnb.js";
 
 // ---------------- Icons ----------------
 const I = {
@@ -70,7 +70,7 @@ const SORTS = [
 ];
 
 // Steht unten im Statistik-Tab; bei jeder neuen Fassung mit ?v= in index.html und sw.js hochzählen.
-const APP_VERSION = "13";
+const APP_VERSION = "14";
 
 // Vorschau-Modus (index.html#demo): Design ohne Login/DB ansehen. In Produktion unsichtbar.
 const DEMO = location.hash.includes("demo");
@@ -182,6 +182,7 @@ function epubBoxHTML(b) {
       ${epubIstOriginal(b) ? `<div class="epub-hint">🇬🇧 Die Datei ist die englische Originalausgabe.</div>` : ""}
       <div class="epub-actions">
         <button type="button" class="btn sm" id="epubDl">Herunterladen</button>
+        <button type="button" class="btn sm" id="epubSend">📲 An Kindle / ElevenReader</button>
         <button type="button" class="btn sm" id="epubShare">📤 Teilen</button>
         <button type="button" class="btn sm ghost" id="epubDel">Entfernen</button>
       </div>
@@ -1185,6 +1186,9 @@ function bookFormHTML(b, isNew) {
     <div class="detail-hero">
       ${coverHTML(b, "").replace('class="cover-wrap ', 'style="width:112px" class="cover-wrap ')}
       <div class="dh-main">
+        ${!isNew && b.author ? `<div class="dh-authors">${splitAuthors(b.author).map((a) =>
+          `<button type="button" class="author-link" data-a="${esc(a)}">${esc(a)} ›</button>`).join("")}</div>` : ""}
+        <div class="stars-lbl">Meine Bewertung</div>
         <div class="stars-row">
           <div class="stars-input" id="stars">${[1,2,3,4,5].map((n) =>
             `<span class="s ${b.rating >= n ? "on" : ""}" data-n="${n}">★</span>`).join("")}</div>
@@ -1338,6 +1342,59 @@ function bindKlappentext() {
   if (t) t.onclick = () => t.classList.toggle("clamp");
 }
 
+// Mehrere Autor:innen stehen als „A, B“ / „A & B“ / „A und B“ im Feld.
+function splitAuthors(s) {
+  return String(s || "").split(/\s*(?:,|;|&|\bund\b|\band\b)\s*/).map((x) => x.trim()).filter((x) => x.length > 1).slice(0, 4);
+}
+// „Mehr von …“: eigene Einträge dieser Person + (bei Büchern) weitere Werke aus Open Library.
+async function openAuthor(name, from) {
+  const mt = from.media_type || "book";
+  const n = (x) => String(x || "").toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
+  const nn = n(name);
+  const eigene = state.books.filter((x) => (x.media_type || "book") === mt && splitAuthors(x.author).some((a) => n(a) === nn));
+  const zurueck = `<div class="sheet-actions"><button class="btn" id="authorBack">Zurück</button></div>`;
+  const eigeneHTML = eigene.length ? `<div class="kt-label">In deinem Regal</div>${eigene.map((x) => `
+      <div class="cand" data-own="${esc(x.id)}">
+        ${x.cover_url ? `<img class="mini" src="${esc(x.cover_url)}" onerror="this.style.visibility='hidden'">` : `<div class="mini"></div>`}
+        <div class="c-main"><div class="c-title">${esc(x.title)}</div>
+          <div class="c-meta">${statusLabel(x.status || "read", mt)}${x.rating ? " · " + stars(x.rating) : ""}${x.published_year ? " · " + x.published_year : ""}</div></div>
+        <span class="c-pick">${I.chevron}</span></div>`).join("")}` : "";
+  const kopf = `<h2>Mehr von ${esc(name)}</h2>`;
+  const bindOwn = () => {
+    $("#authorBack").onclick = () => openDetail(from);
+    document.querySelectorAll("[data-own]").forEach((c) => c.onclick = () => {
+      const x = state.books.find((y) => y.id === c.dataset.own); if (x) openDetail(x); });
+  };
+  if (mt !== "book") {
+    openSheet(kopf + (eigeneHTML || `<p class="sub">Sonst nichts von ${esc(name)} im Regal.</p>`) + zurueck);
+    return bindOwn();
+  }
+  openSheet(kopf + eigeneHTML + `<div class="center-load"><span class="spin dark"></span>Suche weitere Bücher …</div>` + zurueck);
+  bindOwn();
+  let werke = [];
+  try { werke = await booksByAuthor(name); } catch (_) {}
+  if (!$("#authorBack")) return;              // Blatt inzwischen geschlossen/gewechselt
+  const habe = new Set(eigene.flatMap((x) => [n(x.title), n(x.original_title)]).filter(Boolean));
+  const isbns = new Set(eigene.map((x) => x.isbn13).filter(Boolean));
+  const neu = werke.filter((w) => !habe.has(n(w.title)) && !(w.isbn13 && isbns.has(w.isbn13)));
+  const weitereHTML = neu.length ? `<div class="kt-label" style="margin-top:14px">Weitere Bücher · antippen zum Vormerken</div>${neu.map((w, i) => `
+      <div class="cand" data-w="${i}">
+        ${w.cover_url ? `<img class="mini" src="${esc(w.cover_url)}" loading="lazy" onerror="this.style.visibility='hidden'">` : `<div class="mini"></div>`}
+        <div class="c-main"><div class="c-title">${esc(w.title)}</div>
+          <div class="c-meta">${w.published_year ? w.published_year : ""}${w.deutsch ? " · 🇩🇪 deutsche Ausgabe" : ""}</div></div>
+        <span class="c-pick">${I.chevron}</span></div>`).join("")}`
+    : `<p class="sub" style="margin-top:14px">${werke.length ? "Alle bekannten Bücher stehen schon in deinem Regal." : "Keine weiteren Bücher gefunden."}</p>`;
+  openSheet(kopf + eigeneHTML + weitereHTML + zurueck);
+  bindOwn();
+  document.querySelectorAll("[data-w]").forEach((c) => c.onclick = () => {
+    const w = neu[c.dataset.w];
+    const isbn13 = w.isbn13 && w.deutsch ? w.isbn13 : null;
+    openReview({ title: w.title, author: w.author, published_year: w.published_year, isbn13,
+      publisher: w.deutsch ? w.publisher : null, cover_url: w.cover_url ? w.cover_url.replace("-M.jpg", "-L.jpg") : null,
+      status: "want", source: "manual", media_type: "book" });
+  });
+}
+
 // Cover-Picker: Kandidaten aus mehreren Katalogen zeigen, ein Tipp übernimmt das Cover.
 async function openCoverPicker(b) {
   openSheet(`<h2>Cover auswählen</h2>
@@ -1417,6 +1474,35 @@ function bindEpub(b) {
     dl.disabled = false;
   };
 
+  // An Kindle / ElevenReader: die EPUB-Datei selbst ins Teilen-Menü geben – dort „Kindle“ oder „ElevenReader“ wählen.
+  // iOS verlangt fürs Teilen einen frischen Tipp; dauert das Laden zu lange, wird der Knopf zu „Jetzt senden“.
+  const send = $("#epubSend");
+  if (send) send.onclick = async () => {
+    if (DEMO) return toast("(Demo) Senden nicht möglich");
+    const label = send.innerHTML;
+    send.disabled = true; send.innerHTML = '<span class="spin dark"></span> lädt …';
+    try {
+      const res = await fetch(await epubSignedUrl(b.epub_path, 600, false, b.epub_name));
+      if (!res.ok) throw new Error("Datei nicht geladen");
+      const name = (b.epub_name || b.title || "Buch").replace(/\.epub$/i, "") + ".epub";
+      const file = new File([await res.blob()], name, { type: "application/epub+zip" });
+      if (!(navigator.canShare && navigator.canShare({ files: [file] }))) {
+        // Mac/PC: Datei laden und Amazons „Send to Kindle“-Seite öffnen (dort hineinziehen).
+        const a = document.createElement("a"); a.href = URL.createObjectURL(file); a.download = name; a.click();
+        window.open("https://www.amazon.de/sendtokindle", "_blank", "noopener");
+        toast("EPUB geladen – auf der Amazon-Seite hineinziehen");
+        send.innerHTML = label; send.disabled = false; return;
+      }
+      const go = () => navigator.share({ files: [file], title: b.title }).catch((e) => {
+        if (e.name === "NotAllowedError") { send.innerHTML = "📲 Jetzt senden"; send.disabled = false; send.onclick = () => go(); }
+      });
+      send.innerHTML = label; send.disabled = false;
+      send.onclick = () => go();             // weitere Tipps teilen ohne neu zu laden
+      toast("Im Menü „Kindle“ oder „ElevenReader“ wählen");
+      await go();
+    } catch (e) { console.error(e); toast(e.message || "Senden fehlgeschlagen"); send.innerHTML = label; send.disabled = false; }
+  };
+
   // Teilen: Kurzlink auf eine Seite mit Cover + Klappentext (WhatsApp zeigt das als Vorschau), Download 30 Tage.
   const share = $("#epubShare");
   if (share) share.onclick = async () => {
@@ -1474,11 +1560,25 @@ function bindForm(b, isNew) {
   const coverBtn = $("#coverBtn");
   if (coverBtn) coverBtn.onclick = () => openCoverPicker(b);
 
-  // Sterne
+  // Sterne – bei vorhandenen Einträgen sofort gespeichert, ohne „Speichern“
   const paint = () => document.querySelectorAll("#stars .s").forEach((s) =>
     s.classList.toggle("on", draft.rating >= +s.dataset.n));
   document.querySelectorAll("#stars .s").forEach((s) =>
-    s.onclick = () => { draft.rating = (draft.rating === +s.dataset.n) ? 0 : +s.dataset.n; paint(); });
+    s.onclick = async () => {
+      draft.rating = (draft.rating === +s.dataset.n) ? 0 : +s.dataset.n; paint();
+      if (isNew || !b.id) return;
+      const patch = { rating: draft.rating || null };
+      try {
+        if (!DEMO) await updateBook(b.id, patch);
+        Object.assign(b, patch);
+        const i = state.books.findIndex((x) => x.id === b.id); if (i > -1) Object.assign(state.books[i], patch);
+        toast(draft.rating ? `${"★".repeat(draft.rating)} gespeichert` : "Bewertung entfernt");
+        renderMain();
+      } catch (e) { toast("Bewertung nicht gespeichert"); console.error(e); }
+    });
+
+  // Autor antippen → „Mehr von …“
+  document.querySelectorAll(".author-link").forEach((a) => a.onclick = () => openAuthor(a.dataset.a, b));
 
   // Highlight-Schalter
   const hlBtn = $("#hlToggle");

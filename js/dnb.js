@@ -91,3 +91,38 @@ export async function findGermanEdition(titleEn, author) {
   }
   return null;
 }
+
+// „Mehr von …“: Werke eines Autors über Open Library (kein Schlüssel, kein Tageslimit).
+// lang=de lässt Open Library pro Werk die deutsche Ausgabe vorziehen, wenn es eine gibt.
+// Ergebnis: [{ title, author, published_year, isbn13, publisher, cover_url, deutsch }]
+export async function booksByAuthor(author) {
+  const fields = "key,title,first_publish_year,cover_i,author_name,editions,editions.title,editions.isbn,editions.language,editions.cover_i,editions.publisher";
+  const url = `https://openlibrary.org/search.json?author=${encodeURIComponent(author)}&lang=de&sort=editions&limit=40&fields=${fields}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error("Open Library antwortet nicht");
+  const docs = (await res.json()).docs || [];
+  const lateinisch = (s) => /^[\p{Script=Latin}\p{N}\p{P}\p{Zs}\p{S}]+$/u.test(s || "");
+  const seen = new Set(), out = [];
+  for (const w of docs) {
+    const e = (w.editions && w.editions.docs && w.editions.docs[0]) || {};
+    const lang = e.language || [];
+    const deutsch = lang.includes("ger");
+    // Titel: deutsche (oder englische) Ausgabe, sonst Werktitel – Hebräisch/Chinesisch nur notfalls.
+    const title = sauber((deutsch || lang.includes("eng") || !lateinisch(w.title)) && e.title ? e.title : w.title || "");
+    if (!title || !lateinisch(title)) continue;
+    const k = norm(title);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    const isbn13 = (e.isbn || []).find((i) => /^97[89]\d{10}$/.test(i)) || null;
+    const cover = e.cover_i || w.cover_i;
+    out.push({
+      title, deutsch,
+      author: (w.author_name || [])[0] || author,
+      published_year: w.first_publish_year || null,
+      isbn13, publisher: (e.publisher || [])[0] || null,
+      cover_url: cover ? `https://covers.openlibrary.org/b/id/${cover}-M.jpg`
+        : (deutsch && isbn13 ? `https://portal.dnb.de/opac/mvb/cover?isbn=${isbn13}` : null),
+    });
+  }
+  return out;
+}

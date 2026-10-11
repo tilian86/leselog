@@ -212,7 +212,8 @@ export default {
       const o = await env.BUCKET.get(`${uid}/${bid}.epub`);
       if (!o) return new Response("Datei nicht gefunden.", { status: 404 });
       const name = safeName(n || "Buch.epub");
-      return new Response(o.body, { headers: {
+      // CORS: die App lädt die Datei selbst, um sie ins Teilen-Menü (Kindle/ElevenReader) zu geben.
+      return new Response(o.body, { headers: { ...h,
         "Content-Type": "application/epub+zip",
         "Content-Length": String(o.size),
         "Content-Disposition": `${dl === "1" ? "attachment" : "inline"}; filename="${name.replace(/[^\x20-\x7e]/g, "_")}"; filename*=UTF-8''${encodeURIComponent(name)}`,
