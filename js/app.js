@@ -70,7 +70,7 @@ const SORTS = [
 ];
 
 // Steht unten im Statistik-Tab; bei jeder neuen Fassung mit ?v= in index.html und sw.js hochzählen.
-const APP_VERSION = "14";
+const APP_VERSION = "15";
 
 // Vorschau-Modus (index.html#demo): Design ohne Login/DB ansehen. In Produktion unsichtbar.
 const DEMO = location.hash.includes("demo");
@@ -317,8 +317,12 @@ function renderMain() {
   const isBook = state.mediaType === "book";
   const filters = [["all", "Übersicht"], ["read", statusLabel("read")], ["reading", statusLabel("reading")],
     ["want", statusLabel("want")], ["dropped", statusLabel("dropped")], ["highlight", "★ Highlights"]];
-  if (isBook) filters.push(["pick", "🏆 Empfehlungen"], ["archive", "📦 Archiv"], ["every", "Alle"]);
-  const counts = { all: 0, read: 0, reading: 0, want: 0, dropped: 0, highlight: 0, pick: 0, archive: 0, every: mediaBooks.length };
+  if (isBook) filters.push(["pick", "🏆 Empfehlungen"]);
+  // Bei Amazon gemerkte Bücher (Import 25.11.2026, source "amazon"), solange sie noch auf „Will lesen“ stehen
+  const amazonOffen = (b) => b.source === "amazon" && (b.status || "read") === "want";
+  if (isBook && mediaBooks.some(amazonOffen)) filters.push(["amazon", "🛒 Amazon"]);
+  if (isBook) filters.push(["archive", "📦 Archiv"], ["every", "Alle"]);
+  const counts = { all: 0, read: 0, reading: 0, want: 0, dropped: 0, highlight: 0, pick: 0, archive: 0, amazon: mediaBooks.filter(amazonOffen).length, every: mediaBooks.length };
   mediaBooks.forEach((b) => { const s = b.status || "read"; if (counts[s] != null) counts[s]++;
     if (OVERVIEW_STATUS.includes(s) || s === "want") counts.all++;
     if (b.highlight) counts.highlight++;
@@ -429,6 +433,7 @@ function statusFiltered() {
   let list = state.books.filter((b) => (b.media_type || "book") === state.mediaType);
   if (state.filter === "highlight") list = list.filter((b) => b.highlight);
   else if (state.filter === "pick") list = list.filter((b) => b.pick);
+  else if (state.filter === "amazon") list = list.filter((b) => b.source === "amazon" && (b.status || "read") === "want");
   else if (state.filter === "all") list = list.filter((b) => OVERVIEW_STATUS.includes(b.status || "read"));
   else if (state.filter !== "every") list = list.filter((b) => (b.status || "read") === state.filter);
   return list;
