@@ -109,6 +109,7 @@ function mapStatus(v) {
   const s = String(v || "").toLowerCase();
   if (/abgebrochen|dropped|abandon|dnf|did not finish/.test(s)) return "dropped";
   if (/archiv/.test(s)) return "archive";
+  if (/amazon/.test(s)) return "amazon";
   if (/to-?read|to read|want|will|wunsch|merk/.test(s)) return "want";
   if (/currently|reading|lese|gerade/.test(s)) return "reading";
   return "read";

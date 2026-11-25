@@ -41,7 +41,7 @@ const MEDIA = [["book", "📚", "Bücher"], ["movie", "🎬", "Filme"], ["series
 const isMediaType = (mt) => mt === "movie" || mt === "series";
 function typeName(mt) { return (MEDIA.find((m) => m[0] === (mt || state.mediaType)) || MEDIA[0])[2]; }
 function statusLabel(status, mt) {
-  const book = { read: "Gelesen", reading: "Lese gerade", want: "Will lesen", dropped: "Abgebrochen", archive: "Archiv" };
+  const book = { read: "Gelesen", reading: "Lese gerade", want: "Will lesen", dropped: "Abgebrochen", archive: "Archiv", amazon: "Amazon-Liste" };
   const media = { read: "Gesehen", reading: "Schaue gerade", want: "Will sehen", dropped: "Abgebrochen" };
   return (isMediaType(mt || state.mediaType) ? media : book)[status] || status;
 }
@@ -50,7 +50,7 @@ function statusLabel(status, mt) {
 const CATEGORIES = [
   ["Belletristik", "📖"], ["Krimi & Thriller", "🔍"], ["Fantasy & Science-Fiction", "🐉"],
   ["Biografien & Memoiren", "👤"], ["Reisen & Abenteuer", "🧭"], ["Persönliche Entwicklung", "🌱"],
-  ["Psychologie & Beziehungen", "💞"], ["Philosophie & Spiritualität", "🪷"], ["Glaube & Religion", "✝️"],
+  ["Psychologie & Beziehungen", "💞"], ["ADHS", "🧠"], ["Philosophie & Spiritualität", "🪷"], ["Glaube & Religion", "✝️"],
   ["Gesellschaft & Geschichte", "🏛️"], ["Wissenschaft & Natur", "🔬"], ["Wirtschaft & Finanzen", "💶"],
   ["Technik & Krypto", "💻"], ["Gesundheit & Körper", "🫀"], ["Ratgeber & Nachschlagen", "🧰"],
 ];
@@ -70,7 +70,7 @@ const SORTS = [
 ];
 
 // Steht unten im Statistik-Tab; bei jeder neuen Fassung mit ?v= in index.html und sw.js hochzählen.
-const APP_VERSION = "15";
+const APP_VERSION = "16";
 
 // Vorschau-Modus (index.html#demo): Design ohne Login/DB ansehen. In Produktion unsichtbar.
 const DEMO = location.hash.includes("demo");
@@ -132,7 +132,7 @@ function coverImg(b) {
     ` onerror="var a=this.dataset.amz;if(a&amp;&amp;this.src.indexOf(a)===-1){this.src=a}else{this.remove()}">`;
 }
 function coverHTML(b, cls = "") {
-  const status = b.status && b.status !== "read" && b.status !== "archive"
+  const status = b.status && b.status !== "read" && b.status !== "archive" && b.status !== "amazon"
     ? `<span class="badge-status ${b.status}">${statusLabel(b.status, b.media_type)}</span>` : "";
   const mark = (b.highlight ? "★" : "") + (b.pick ? "🏆" : "");
   const hl = mark ? `<span class="badge-highlight" title="${b.pick ? "Empfehlung" : "Highlight"}">${mark}</span>` : "";
@@ -318,11 +318,11 @@ function renderMain() {
   const filters = [["all", "Übersicht"], ["read", statusLabel("read")], ["reading", statusLabel("reading")],
     ["want", statusLabel("want")], ["dropped", statusLabel("dropped")], ["highlight", "★ Highlights"]];
   if (isBook) filters.push(["pick", "🏆 Empfehlungen"]);
-  // Bei Amazon gemerkte Bücher (Import 25.11.2026, source "amazon"), solange sie noch auf „Will lesen“ stehen
-  const amazonOffen = (b) => b.source === "amazon" && (b.status || "read") === "want";
-  if (isBook && mediaBooks.some(amazonOffen)) filters.push(["amazon", "🛒 Amazon"]);
+  // Amazon-Liste: bei Amazon gemerkte Bücher (eigener Status "amazon", seit 25.11.2026) –
+  // eigener Reiter, damit „Will lesen“ schlank bleibt; dort immer nach Themen gegliedert
+  if (isBook && mediaBooks.some((b) => b.status === "amazon")) filters.push(["amazon", "🛒 Amazon-Liste"]);
   if (isBook) filters.push(["archive", "📦 Archiv"], ["every", "Alle"]);
-  const counts = { all: 0, read: 0, reading: 0, want: 0, dropped: 0, highlight: 0, pick: 0, archive: 0, amazon: mediaBooks.filter(amazonOffen).length, every: mediaBooks.length };
+  const counts = { all: 0, read: 0, reading: 0, want: 0, dropped: 0, highlight: 0, pick: 0, archive: 0, amazon: 0, every: mediaBooks.length };
   mediaBooks.forEach((b) => { const s = b.status || "read"; if (counts[s] != null) counts[s]++;
     if (OVERVIEW_STATUS.includes(s) || s === "want") counts.all++;
     if (b.highlight) counts.highlight++;
@@ -403,8 +403,10 @@ function shelfHTML(list) {
   const block = (l) => state.layout === "list"
     ? `<div class="shelf-list">${l.map(rowHTML).join("")}</div>`
     : `<div class="shelf">${l.map(bookCardHTML).join("")}</div>`;
-  if (state.sort !== "category" || state.mediaType !== "book") return block(list);
-  // Nach Kategorie: Abschnitte mit Überschrift
+  // Nach Kategorie: Abschnitte mit Überschrift – in der Amazon-Liste immer (außer bei Suche)
+  const nachThema = state.mediaType === "book" && (state.sort === "category" || (state.filter === "amazon" && !state.search));
+  if (!nachThema) return block(list);
+  if (state.sort !== "category") list = [...list].sort((a, b) => catIndex(a.category) - catIndex(b.category));
   const groups = [];
   list.forEach((b) => { const c = b.category || NO_CAT;
     const g = groups[groups.length - 1];
@@ -433,7 +435,6 @@ function statusFiltered() {
   let list = state.books.filter((b) => (b.media_type || "book") === state.mediaType);
   if (state.filter === "highlight") list = list.filter((b) => b.highlight);
   else if (state.filter === "pick") list = list.filter((b) => b.pick);
-  else if (state.filter === "amazon") list = list.filter((b) => b.source === "amazon" && (b.status || "read") === "want");
   else if (state.filter === "all") list = list.filter((b) => OVERVIEW_STATUS.includes(b.status || "read"));
   else if (state.filter !== "every") list = list.filter((b) => (b.status || "read") === state.filter);
   return list;
@@ -621,6 +622,7 @@ function renderStats(main) {
   const want = all.filter((b) => b.status === "want").length;
   const dropped = all.filter((b) => b.status === "dropped");
   const archived = all.filter((b) => b.status === "archive").length;
+  const amazonN = all.filter((b) => b.status === "amazon").length;
   const withEpub = all.filter((b) => b.epub_path).length;
   const highlights = all.filter((b) => b.highlight)
     .sort((a, b) => (b.rating || 0) - (a.rating || 0) || (a.title || "").localeCompare(b.title || "", "de"));
@@ -640,7 +642,7 @@ function renderStats(main) {
       <div class="stat-card"><div class="num">${people.size}</div><div class="lab">verschiedene ${peopleLab}</div></div>
       <div class="stat-card"><div class="num">${avg}</div><div class="lab">Ø Bewertung</div></div>
     </div>
-    ${(reading || want || dropped.length || archived) ? `<div class="mini-counts">${reading ? `<span>📖 ${reading} ${media ? "schaue ich gerade" : "lese ich gerade"}</span>` : ""}${want ? `<span>🔖 ${want} auf der ${media ? "Will-sehen" : "Will-lesen"}-Liste</span>` : ""}${dropped.length ? `<span>🚫 ${dropped.length} abgebrochen</span>` : ""}${archived ? `<span>📦 ${archived} im Archiv</span>` : ""}${withEpub ? `<span>📎 ${withEpub} mit EPUB</span>` : ""}</div>` : ""}
+    ${(reading || want || dropped.length || archived || amazonN) ? `<div class="mini-counts">${reading ? `<span>📖 ${reading} ${media ? "schaue ich gerade" : "lese ich gerade"}</span>` : ""}${want ? `<span>🔖 ${want} auf der ${media ? "Will-sehen" : "Will-lesen"}-Liste</span>` : ""}${dropped.length ? `<span>🚫 ${dropped.length} abgebrochen</span>` : ""}${archived ? `<span>📦 ${archived} im Archiv</span>` : ""}${amazonN ? `<span>🛒 ${amazonN} auf der Amazon-Liste</span>` : ""}${withEpub ? `<span>📎 ${withEpub} mit EPUB</span>` : ""}</div>` : ""}
 
     ${yearSectionHTML(read)}
 
@@ -1142,7 +1144,8 @@ function showCandidates(results, parsed) {
 // (overviewHTML), Abgebrochen und Archiv nur in ihren Reitern.
 const OVERVIEW_STATUS = ["read", "reading"];
 const STATUS_KEYS = ["read", "reading", "want", "dropped"];
-const statusKeys = (mt) => isMediaType(mt) ? STATUS_KEYS : [...STATUS_KEYS, "archive"];
+// „Amazon-Liste“ steht nur zur Wahl, wenn das Buch dort liegt (von dort z. B. auf „Will lesen“ umstellen)
+const statusKeys = (mt, cur) => isMediaType(mt) ? STATUS_KEYS : [...STATUS_KEYS, "archive", ...(cur === "amazon" ? ["amazon"] : [])];
 
 function bookFormHTML(b, isNew) {
   b = b || {};
@@ -1218,7 +1221,7 @@ function bookFormHTML(b, isNew) {
       <textarea class="input" id="f_picknote" placeholder="z. B. Klassiker, verändert den Blick auf …">${esc(b.pick_note || "")}</textarea></label>` : ""}
 
     <div class="status-pick" id="statusPick">
-      ${statusKeys(mt).map((k) => `<button data-s="${k}" class="${(b.status || "read") === k ? "on" : ""}">${statusLabel(k, mt)}</button>`).join("")}
+      ${statusKeys(mt, b.status).map((k) => `<button data-s="${k}" class="${(b.status || "read") === k ? "on" : ""}">${statusLabel(k, mt)}</button>`).join("")}
     </div>
 
     <label class="fld abandon-fld" id="abandonFld" style="${(b.status === "dropped") ? "" : "display:none"}">
